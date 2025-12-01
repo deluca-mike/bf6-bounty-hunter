@@ -1,4 +1,29 @@
 {
+    "ffaAutoSpawningSoldier": {
+        "countdown": "Spawn prompt in {} seconds...",
+        "buttons": {
+            "spawn": "Spawn now",
+            "delay": "Ask again in {} seconds"
+        }
+    },
+    "bountyHunter": {
+        "hud": {
+            "killStreak": "Kill Streak: {}",
+            "spotted": "Spotted: {} seconds every {} seconds",
+            "notSpotted": "Not Spotted"
+        },
+        "scoreboard": {
+            "header": "Bounty Hunters - Target Points: {} - Leader: {}",
+            "none": "None",
+            "columns": {
+                "points": "Points",
+                "kills": "Kills",
+                "deaths": "Deaths",
+                "streak": "Streak",
+                "bounty": "Bounty"
+            }
+        }
+    },
     "logger": {
         "format": {
             "1": "{}",
@@ -103,20 +128,10 @@
             ";": ";"
         }
     },
-    "scoreboard": {
-        "header": "Bounty Hunters - Target Points: {} - Leader: {}",
-        "none": "None",
-        "columns": {
-            "points": "Points",
-            "kills": "Kills",
-            "deaths": "Deaths",
-            "bounty": "Bounty",
-            "streak": "Current Streak"
+    "debug": {
+        "buttons": {
+            "toggleLoggers": "Toggle Loggers",
+            "close": "Close"
         }
-    },
-    "hud": {
-        "killStreak": "Kill Streak: {}",
-        "spotted": "Spotted: {} seconds every {} seconds",
-        "notSpotted": "Not Spotted"
     }
 }

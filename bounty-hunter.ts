@@ -393,7 +393,7 @@ class Logger {
     static readonly PADDING: number = 10;
 
     constructor(
-        player: mod.Player,
+        player?: mod.Player,
         options?: Logger.Options
     ) {
         this.width = options?.width ?? 400;
@@ -669,18 +669,435 @@ namespace Logger {
 
 const SPAWNS: { location: mod.Vector, orientation: number }[] = [
     {
-        location: mod.CreateVector(0, 0, 0),
+        location: mod.CreateVector(-296.85, 235.07, -68.62),
+        orientation: 180,
+    },
+    {
+        location: mod.CreateVector(-263.63, 235.47, -81.83),
+        orientation: 90,
+    },
+    {
+        location: mod.CreateVector(-183.30, 237.29, -90.60),
+        orientation: 180,
+    },
+    {
+        location: mod.CreateVector(-148.71, 236.77, -78.93),
         orientation: 0,
     },
     {
-        location: mod.CreateVector(0, 0, 0),
+        location: mod.CreateVector(-118.32, 239.35, 15.71),
+        orientation: 90,
+    },
+    {
+        location: mod.CreateVector(-149.41, 237.77, 10.04),
+        orientation: 270,
+    },
+    {
+        location: mod.CreateVector(-208.97, 238.23, -4.04),
+        orientation: 180,
+    },
+    {
+        location: mod.CreateVector(-245.57, 236.44, 3.57),
         orientation: 0,
+    },
+    {
+        location: mod.CreateVector(-289.62, 235.20, 53.69),
+        orientation: 90,
+    },
+    {
+        location: mod.CreateVector(-253.38, 234.52, 74.99),
+        orientation: 180,
+    },
+    {
+        location: mod.CreateVector(-159.43, 237.38, 96.86),
+        orientation: 90,
+    },
+    {
+        location: mod.CreateVector(-128.28, 237.49, 104.55),
+        orientation: 90,
+    },
+    {
+        location: mod.CreateVector(-156.21, 237.18, 166.81),
+        orientation: 270,
+    },
+    {
+        location: mod.CreateVector(-156.21, 237.18, 166.81),
+        orientation: 270,
+    },
+    {
+        location: mod.CreateVector(-83.35, 239.04, 217.75),
+        orientation: 270,
+    },
+    {
+        location: mod.CreateVector(279.12, 232.46, -11.11),
+        orientation: 180,
+    },
+    {
+        location: mod.CreateVector(206.62, 240.11, -160.75),
+        orientation: 270,
+    },
+    {
+        location: mod.CreateVector(194.76, 240.08, -201.06),
+        orientation: 180,
+    },
+    {
+        location: mod.CreateVector(218.22, 230.12, 44.09),
+        orientation: 90,
+    },
+    {
+        location: mod.CreateVector(120.66, 231.78, 5.75),
+        orientation: 180,
+    },
+    {
+        location: mod.CreateVector(94.32, 233.69, -30.49),
+        orientation: 180,
+    },
+    {
+        location: mod.CreateVector(25.72, 227.23, 305.69),
+        orientation: 0,
+    },
+    {
+        location: mod.CreateVector(140.24, 226.12, 189.48),
+        orientation: 270,
+    },
+    {
+        location: mod.CreateVector(224.47, 225.83, 100.33),
+        orientation: 0,
+    },
+    {
+        location: mod.CreateVector(328.33, 233.86, 30.59),
+        orientation: 270,
+    },
+    {
+        location: mod.CreateVector(62.51, 234.33, 45.48),
+        orientation: 90,
+    },
+    {
+        location: mod.CreateVector(10.91, 232.19, 81.13),
+        orientation: 180,
+    },
+    {
+        location: mod.CreateVector(-48.83, 238.32, 92.06),
+        orientation: 90,
+    },
+    {
+        location: mod.CreateVector(-95.22, 235.34, 61.43),
+        orientation: 0,
+    },
+    {
+        location: mod.CreateVector(-197.68, 233.88, 23.08),
+        orientation: 270,
+    },
+    {
+        location: mod.CreateVector(-224.46, 231.68, 45.27),
+        orientation: 180,
+    },
+    {
+        location: mod.CreateVector(-226.03, 232.04, 21.26),
+        orientation: 270, // 32
+    },
+    {
+        location: mod.CreateVector(178.51, 240.89, -177.08),
+        orientation: 90,
+    },
+    {
+        location: mod.CreateVector(220.78, 237.68, -134.05),
+        orientation: 270,
+    },
+    {
+        location: mod.CreateVector(-375.86, 233.60, -16.30),
+        orientation: 90,
+    },
+    {
+        location: mod.CreateVector(-238.17, 253.83, -167.73),
+        orientation: 180,
+    },
+    {
+        location: mod.CreateVector(-22.73, 238.87, -98.50),
+        orientation: 180,
+    },
+    {
+        location: mod.CreateVector(87.33, 239.70, -135.99),
+        orientation: 90,
     }
 ];
 
 let staticLogger: Logger | undefined;
 let dynamicLogger: Logger | undefined;
+let debugMenu: UI.Container | undefined;
 
+class FFAAutoSpawningSoldier {
+    private static allSoldiers: { [playerId: number]: FFAAutoSpawningSoldier } = {};
+
+    private static readonly DELAY: number = 10;
+
+    private static readonly SAFE_MINIMUM_DISTANCE: number = 20;
+    
+    private static readonly ACCEPTABLE_MAXIMUM_DISTANCE: number = 50;
+
+    private static readonly PRIME_STEPS: number[] = [2039, 2027, 2017];
+
+    private static readonly MAX_SPAWN_CHECKS: number = 10;
+
+    private static spawns: { spawnPoint: mod.SpawnPoint, location: mod.Vector }[] = [];
+
+    private static spawnQueue: FFAAutoSpawningSoldier[] = [];
+
+    private static queueProcessingEnabled: boolean = false;
+
+    private static queueProcessingActive: boolean = false;
+
+    public static setSpawns(spawns: { location: mod.Vector, orientation: number }[]) {
+        FFAAutoSpawningSoldier.spawns = spawns.map(spawn => {
+            return {
+                spawnPoint: mod.GetSpawnPoint(mod.GetObjId(mod.SpawnObject(mod.RuntimeSpawn_Common.PlayerSpawner, spawn.location, FFAAutoSpawningSoldier.getRotationVector(spawn.orientation)))), // TODO: check if this can be just `as mod.SpawnPoint`.
+                location: spawn.location
+            };
+        });
+
+        dynamicLogger?.log(`FFAASS: Set ${FFAAutoSpawningSoldier.spawns.length} spawn points.`);
+    }
+
+    private static getRotationVector(orientation: number): mod.Vector {
+        return mod.CreateVector(0, mod.DegreesToRadians(180 - orientation), 0);
+    }
+
+    private static getBestSpawnPoint(): mod.SpawnPoint {
+        // Prime Walking Algorithm
+        const primeSteps = FFAAutoSpawningSoldier.PRIME_STEPS;
+        const stepSize = primeSteps[~~mod.RandomReal(0, primeSteps.length) % primeSteps.length]; // Mod because `RandomReal` is apparently inclusive of the end value.
+        const spawns = FFAAutoSpawningSoldier.spawns;
+        const startIndex = ~~mod.RandomReal(0, spawns.length) % spawns.length; // Mod because `RandomReal` is apparently inclusive of the end value.
+
+        let bestFallback: mod.SpawnPoint = spawns[startIndex].spawnPoint;
+        let maxDistance = -1;
+
+        for (let i = 0; i < FFAAutoSpawningSoldier.MAX_SPAWN_CHECKS; ++i) {
+            const index = (startIndex + (i * stepSize)) % spawns.length;
+            const candidate = spawns[index];
+            const distanceToClosestPlayer = FFAAutoSpawningSoldier.getDistanceToClosestPlayer(candidate.location);
+        
+            if (distanceToClosestPlayer >= FFAAutoSpawningSoldier.SAFE_MINIMUM_DISTANCE && distanceToClosestPlayer <= FFAAutoSpawningSoldier.ACCEPTABLE_MAXIMUM_DISTANCE) {
+                dynamicLogger?.log(`FFAASS: Spawn-${index} is ideal (${distanceToClosestPlayer.toFixed(2)}m to closest player).`);
+                return candidate.spawnPoint; 
+            }
+        
+            if (distanceToClosestPlayer > maxDistance) {
+                maxDistance = distanceToClosestPlayer;
+                bestFallback = candidate.spawnPoint;
+            }
+        }
+
+        dynamicLogger?.log(`FFAASS: Non-ideal fallback spawn is ${maxDistance.toFixed(2)}m to closest player.`);
+
+        return bestFallback;
+    }
+
+    private static getDistanceToClosestPlayer(location: mod.Vector): number {
+        const closestPlayer = mod.ClosestPlayerTo(location);
+
+        if (!mod.IsPlayerValid(closestPlayer)) return FFAAutoSpawningSoldier.SAFE_MINIMUM_DISTANCE; // No players alive on the map.
+
+        return mod.DistanceBetween(location, mod.GetSoldierState(closestPlayer, mod.SoldierStateVector.GetPosition));
+    }
+
+    private static processSpawnQueue(): void {
+        FFAAutoSpawningSoldier.queueProcessingActive = true;
+
+        if (!FFAAutoSpawningSoldier.queueProcessingEnabled) {
+            FFAAutoSpawningSoldier.queueProcessingActive = false;
+            return;
+        }
+
+        dynamicLogger?.log(`FFAASS: Processing ${FFAAutoSpawningSoldier.spawnQueue.length} in queue.`);
+
+        if (FFAAutoSpawningSoldier.spawnQueue.length == 0) {
+            dynamicLogger?.log(`FFAASS: No players in queue. Suspending processing.`);
+            FFAAutoSpawningSoldier.queueProcessingActive = false;
+            return;
+        }
+
+        while (FFAAutoSpawningSoldier.spawnQueue.length > 0) {
+            const soldier = FFAAutoSpawningSoldier.spawnQueue.shift();
+
+            if (!soldier || soldier.deleteIfNotValid()) continue;
+
+            dynamicLogger?.log(`FFAASS: Spawning Player-${soldier.playerId}.`);
+
+            mod.SpawnPlayerFromSpawnPoint(soldier.player, FFAAutoSpawningSoldier.getBestSpawnPoint());
+        }
+
+        mod.Wait(1).then(() => FFAAutoSpawningSoldier.processSpawnQueue());
+    }
+
+    public static startDelay(player: mod.Player): void {
+        dynamicLogger?.log(`FFAASS: Start delay request for Player-${mod.GetObjId(player)}.`);
+
+        const soldier = FFAAutoSpawningSoldier.allSoldiers[mod.GetObjId(player)];
+
+        if (!soldier || soldier.deleteIfNotValid()) return;
+
+        soldier.startDelay();
+    }
+
+    public static forceIntoQueue(player: mod.Player): void {
+        if (!mod.IsPlayerValid(player)) return;
+
+        const soldier = FFAAutoSpawningSoldier.allSoldiers[mod.GetObjId(player)];
+
+        if (!soldier || soldier.deleteIfNotValid()) return;
+
+        soldier.addToQueue();
+    }
+
+    public static enableSpawnQueueProcessing(): void {
+        dynamicLogger?.log(`FFAASS: Enabling processing spawn queue.`);
+
+        if (FFAAutoSpawningSoldier.queueProcessingEnabled) return;
+
+        FFAAutoSpawningSoldier.queueProcessingEnabled = true;
+        FFAAutoSpawningSoldier.processSpawnQueue();
+    }
+
+    public static disableSpawnQueueProcessing(): void {
+        dynamicLogger?.log(`FFAASS: Disabling processing spawn queue.`);
+
+        FFAAutoSpawningSoldier.queueProcessingEnabled = false;
+    }
+
+    constructor(player: mod.Player, isAISoldier?: boolean) {
+        this.player = player;
+        this.playerId = mod.GetObjId(player);
+
+        FFAAutoSpawningSoldier.allSoldiers[this.playerId] = this;
+
+        if (isAISoldier) return;
+
+        this.promptUI = UI.createContainer({
+            x: 0,
+            y: 0,
+            width: 400,
+            height: 80,
+            anchor: mod.UIAnchor.Center,
+            bgColor: UI.COLORS.BLACK,
+            bgAlpha: 0.5,
+            visible: false,
+            childrenParams: [
+                {
+                    type: UI.Type.Button,
+                    x: 0,
+                    y: 40,
+                    width: 400,
+                    height: 40,
+                    anchor: mod.UIAnchor.TopCenter,
+                    bgColor: UI.COLORS.GREY_25,
+                    baseColor: UI.COLORS.BLACK,
+                    label: {
+                        message: mod.Message(mod.stringkeys.ffaAutoSpawningSoldier.buttons.spawn),
+                        textSize: 30,
+                        textColor: UI.COLORS.GREEN,
+                    },
+                    onClick: async (player: mod.Player): Promise<void> => {
+                        this.addToQueue();
+                    },
+                },
+                {
+                    type: UI.Type.Button,
+                    x: 0,
+                    y: 0,
+                    width: 400,
+                    height: 40,
+                    anchor: mod.UIAnchor.TopCenter,
+                    bgColor: UI.COLORS.GREY_25,
+                    baseColor: UI.COLORS.BLACK,
+                    label: {
+                        message: mod.Message(mod.stringkeys.ffaAutoSpawningSoldier.buttons.delay, FFAAutoSpawningSoldier.DELAY),
+                        textSize: 30,
+                        textColor: UI.COLORS.GREEN,
+                    },
+                    onClick: async (player: mod.Player): Promise<void> => {
+                        this.startDelay();
+                    },
+                },
+            ]
+        }, player);
+
+        this.countdownUI = UI.createText({
+            x: 0,
+            y: 60,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            message: mod.Message(mod.stringkeys.ffaAutoSpawningSoldier.countdown, this.delayCountdown),
+            textSize: 20,
+            textColor: UI.COLORS.GREEN,
+            visible: false,
+        }, player);
+    }
+
+    public player: mod.Player;
+
+    private playerId: number;
+
+    private delayCountdown: number = FFAAutoSpawningSoldier.DELAY;
+
+    private promptUI?: UI.Container;
+
+    private countdownUI?: UI.Text;
+
+    private startDelay(): void {
+        dynamicLogger?.log(`FFAASS: Starting delay for Player-${this.playerId}.`);
+
+        this.countdownUI?.show();
+        this.promptUI?.hide();
+        mod.EnableUIInputMode(false, this.player);
+
+        this.delayCountdown = FFAAutoSpawningSoldier.DELAY;
+        this.handleDelayCountdown();
+    }
+
+    private handleDelayCountdown(): void {
+        if (this.deleteIfNotValid()) return;
+
+        this.countdownUI?.setMessage(mod.Message(mod.stringkeys.ffaAutoSpawningSoldier.countdown, this.delayCountdown--));
+
+        if (this.delayCountdown < 0) return this.showPrompt();
+
+        mod.Wait(1).then(() => this.handleDelayCountdown());
+    }
+
+    private showPrompt(): void {
+        this.countdownUI?.hide();
+        mod.EnableUIInputMode(true, this.player);
+        this.promptUI?.show();
+    }
+
+    private addToQueue(): void {
+        FFAAutoSpawningSoldier.spawnQueue.push(this);
+
+        dynamicLogger?.log(`FFAASS: Player-${this.playerId} added to queue (${FFAAutoSpawningSoldier.spawnQueue.length} total).`);
+
+        this.countdownUI?.hide();
+        this.promptUI?.hide();
+        mod.EnableUIInputMode(false, this.player);
+
+        if (!FFAAutoSpawningSoldier.queueProcessingEnabled || FFAAutoSpawningSoldier.queueProcessingActive) return;
+
+        dynamicLogger?.log(`FFAASS: Restarting spawn queue processing.`);
+        FFAAutoSpawningSoldier.processSpawnQueue();
+    }
+
+    private deleteIfNotValid(): boolean {
+        if (mod.IsPlayerValid(this.player)) return false;
+
+        this.promptUI?.delete();
+        this.countdownUI?.delete();
+        delete FFAAutoSpawningSoldier.allSoldiers[this.playerId];
+        return true;
+    }
+}
+
+// TODO: delete if not valid, for player and easy cleanup.
 class BountyHunter {
     private static allBountyHunters: { [playerId: number]: BountyHunter } = {};
     
@@ -732,7 +1149,7 @@ class BountyHunter {
             bgColor: UI.COLORS.BLACK,
             bgAlpha: 0.5,
             depth: mod.UIDepth.BelowGameUI
-        });
+        }, player);
 
         this.killStreakUI = UI.createText({
             x: 0,
@@ -740,7 +1157,7 @@ class BountyHunter {
             width: 200,
             height: 20,
             anchor: mod.UIAnchor.TopCenter,
-            message: mod.Message(mod.stringkeys.hud.killStreak, 0),
+            message: mod.Message(mod.stringkeys.bountyHunter.hud.killStreak, 0),
             textSize: 20,
             textColor: UI.COLORS.GREEN,
             parent: container,
@@ -752,7 +1169,7 @@ class BountyHunter {
             width: 400,
             height: 20,
             anchor: mod.UIAnchor.TopCenter,
-            message: mod.Message(mod.stringkeys.hud.notSpotted),
+            message: mod.Message(mod.stringkeys.bountyHunter.hud.notSpotted),
             textSize: 20,
             textColor: UI.COLORS.GREEN,
             parent: container,
@@ -782,7 +1199,7 @@ class BountyHunter {
 
         if (!this.isSpotted) {
             dynamicLogger?.log(`Player-${mod.GetObjId(this.player)} is not spotted!`);
-            this.spottedUI.setMessage(mod.Message(mod.stringkeys.hud.notSpotted));
+            this.spottedUI.setMessage(mod.Message(mod.stringkeys.bountyHunter.hud.notSpotted));
             return;
         }
 
@@ -790,7 +1207,7 @@ class BountyHunter {
 
         const delay = BountyHunter.STREAK_SPOTTING_DELAYS[this.killStreak];
 
-        this.spottedUI.setMessage(mod.Message(mod.stringkeys.hud.spotted, BountyHunter.SPOTTING_DURTATION, delay));
+        this.spottedUI.setMessage(mod.Message(mod.stringkeys.bountyHunter.hud.spotted, BountyHunter.SPOTTING_DURTATION, delay));
 
         mod.SpotTarget(this.player, BountyHunter.SPOTTING_DURTATION, mod.SpotStatus.SpotInBoth);
 
@@ -799,7 +1216,7 @@ class BountyHunter {
 
     public setKillStreak(killStreak: number): void {
         this.killStreak = killStreak;
-        this.killStreakUI.setMessage(mod.Message(mod.stringkeys.hud.killStreak, killStreak));
+        this.killStreakUI.setMessage(mod.Message(mod.stringkeys.bountyHunter.hud.killStreak, killStreak));
     }
 
     public static getFromPlayer(player: mod.Player): BountyHunter {
@@ -807,7 +1224,10 @@ class BountyHunter {
     }
 
     public static handleKill(killerPlayer: mod.Player, victimPlayer: mod.Player): void {
-        dynamicLogger?.log(`Player-${mod.GetObjId(killerPlayer)} killed Player-${mod.GetObjId(victimPlayer)}!`);
+        const killerId = mod.GetObjId(killerPlayer);
+        const victimId = mod.GetObjId(victimPlayer);
+
+        dynamicLogger?.log(`Player-${killerId} killed Player-${victimId}!`);
 
         const killer = BountyHunter.getFromPlayer(killerPlayer);
         const victim = BountyHunter.getFromPlayer(victimPlayer);
@@ -825,11 +1245,13 @@ class BountyHunter {
                 victim.kills,
                 victim.deaths,
                 0,
-                BountyHunter.BASE_KILL_POINTS * BountyHunter.BOUNTY_MULTIPLIERS[0]
+                BountyHunter.BASE_KILL_POINTS * BountyHunter.BOUNTY_MULTIPLIERS[0],
             );
         } else {
             BountyHunter.delete(victimPlayer);
         }
+
+        if (killerId == victimId) return;
 
         killer.points += bounty;
         ++killer.kills;
@@ -869,19 +1291,92 @@ class BountyHunter {
     }
 }
 
+const DEBUG_MENU = {
+    x: 0,
+    y: 0,
+    width: 300,
+    height: 200,
+    anchor: mod.UIAnchor.Center,
+    bgColor: UI.COLORS.BLACK,
+    bgAlpha: 0.5,
+    visible: false,
+    childrenParams: [
+        {
+            type: UI.Type.Button,
+            x: 0,
+            y: 0,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            bgColor: UI.COLORS.GREY_25,
+            baseColor: UI.COLORS.BLACK,
+            label: {
+                message: mod.Message(mod.stringkeys.debug.buttons.toggleLoggers),
+                textSize: 20,
+                textColor: UI.COLORS.GREEN,
+            },
+            onClick: async (player: mod.Player): Promise<void> => {
+                dynamicLogger?.log(`Clicked toggle loggers button`);
+                staticLogger?.toggle();
+                dynamicLogger?.toggle();
+            },
+        },
+        {
+            type: UI.Type.Button,
+            x: 0,
+            y: 0,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.BottomCenter,
+            bgColor: UI.COLORS.GREY_25,
+            baseColor: UI.COLORS.BLACK,
+            label: {
+                message: mod.Message(mod.stringkeys.debug.buttons.close),
+                textSize: 20,
+                textColor: UI.COLORS.GREEN,
+            },
+            onClick: async (player: mod.Player): Promise<void> => {
+                dynamicLogger?.log(`Clicked close button`);
+                mod.EnableUIInputMode(false, player);
+                debugMenu?.hide();
+            },
+        },
+    ]
+};
+
 export function OnGameModeStarted(): void {
     mod.SetGameModeTimeLimit(1200); // 20 minutes
     mod.SetScoreboardType(mod.ScoreboardType.CustomFFA);
     mod.SetGameModeTargetScore(BountyHunter.TARGET_POINTS);
-    mod.SetScoreboardColumnWidths(150, 150, 150, 150, 250);
+    mod.SetScoreboardColumnWidths(160, 160, 160, 160, 160);
 
     mod.SetScoreboardColumnNames(
-        mod.Message(mod.stringkeys.scoreboard.columns.points),
-        mod.Message(mod.stringkeys.scoreboard.columns.kills),
-        mod.Message(mod.stringkeys.scoreboard.columns.deaths),
-        mod.Message(mod.stringkeys.scoreboard.columns.bounty),
-        mod.Message(mod.stringkeys.scoreboard.columns.streak),
+        mod.Message(mod.stringkeys.bountyHunter.scoreboard.columns.points),
+        mod.Message(mod.stringkeys.bountyHunter.scoreboard.columns.kills),
+        mod.Message(mod.stringkeys.bountyHunter.scoreboard.columns.deaths),
+        mod.Message(mod.stringkeys.bountyHunter.scoreboard.columns.streak),
+        mod.Message(mod.stringkeys.bountyHunter.scoreboard.columns.bounty),
     );
+
+    mod.EnableHQ(mod.GetHQ(1), false);
+    mod.EnableHQ(mod.GetHQ(2), false);
+
+    FFAAutoSpawningSoldier.setSpawns(SPAWNS);
+    FFAAutoSpawningSoldier.enableSpawnQueueProcessing();
+
+    // dynamicLogger?.log(`Setting up scoreboard header.`);
+    // const headerName = mod.Message(
+    //     mod.stringkeys.bountyHunter.scoreboard.header,
+    //     BountyHunter.TARGET_POINTS,
+    //     mod.stringkeys.bountyHunter.scoreboard.none,
+    // );
+
+    // mod.SetScoreboardHeader(headerName);
+
+    // dynamicLogger?.log(`Setting up scoreboard sorting.`);
+    // mod.SetScoreboardSorting(1);
+
+    // mod.SetScoreboardSorting(0, false);
 }
 
 export function OnTimeLimitReached(): void {
@@ -896,70 +1391,73 @@ export function OnTimeLimitReached(): void {
 
 export function OnPlayerJoinGame(eventPlayer: mod.Player): void {
     new BountyHunter(eventPlayer);
-}
+    new FFAAutoSpawningSoldier(eventPlayer);
 
-export function OnPlayerDeployed(eventPlayer: mod.Player): void {
-    if (mod.GetObjId(eventPlayer) != 0) return;
-
-    if (!staticLogger) {
-        staticLogger = new Logger(eventPlayer, { staticRows: true, visible: true, anchor: mod.UIAnchor.TopLeft });
-        dynamicLogger = new Logger(eventPlayer, { staticRows: false, visible: true, anchor: mod.UIAnchor.TopRight });
+    if (mod.GetSoldierState(eventPlayer, mod.SoldierStateBool.IsAISoldier)) {
+        dynamicLogger?.log(`Player-${mod.GetObjId(eventPlayer)} is an AI soldier, forcing into spawn queue.`);
+        FFAAutoSpawningSoldier.forceIntoQueue(eventPlayer);
+        return;
     }
 
-    dynamicLogger?.log(`Hello Player-${mod.GetObjId(eventPlayer)}!`);
+    FFAAutoSpawningSoldier.startDelay(eventPlayer);
 
-    logPosition(eventPlayer);
+    if (mod.GetObjId(eventPlayer) != 0) return;
 
-    // dynamicLogger?.log(`Setting up scoreboard header.`);
-    // const headerName = mod.Message(
-    //     mod.stringkeys.scoreboard.header,
-    //     BountyHunter.TARGET_POINTS,
-    //     mod.stringkeys.scoreboard.none,
-    // );
-
-    // mod.SetScoreboardHeader(headerName);
-
-    // dynamicLogger?.log(`Setting up scoreboard sorting.`);
-    // mod.SetScoreboardSorting(1);
-}
-
-function logPosition(player: mod.Player): void {
-    mod.Wait(0.5).then(() => {
-        if (!mod.GetSoldierState(player, mod.SoldierStateBool.IsAlive)) return;
-
-        staticLogger?.log(`Position: ${getPositionString(player)}`);
-        logPosition(player);
-    });
-}
-
-function getPositionString(player: mod.Player): string {
-    const position = mod.GetSoldierState(player, mod.SoldierStateVector.GetPosition);
-
-    return `<${mod.XComponentOf(position).toFixed(2)}, ${mod.YComponentOf(position).toFixed(2)}, ${mod.ZComponentOf(position).toFixed(2)}>`;
+    staticLogger = new Logger(eventPlayer, { staticRows: true, visible: false, anchor: mod.UIAnchor.TopLeft });
+    dynamicLogger = new Logger(eventPlayer, { staticRows: false, visible: false, anchor: mod.UIAnchor.TopRight, height: 700 });
+    debugMenu = UI.createContainer(DEBUG_MENU, eventPlayer);
 }
 
 export function OnPlayerDied(eventPlayer: mod.Player, eventOtherPlayer: mod.Player, eventDeathType: mod.DeathType, eventWeaponUnlock: mod.WeaponUnlock): void {
     BountyHunter.handleKill(eventOtherPlayer, eventPlayer);
 }
 
-// export function GetSpawner(number: number): Spawner;
-// export function GetSpatialObject(spatialObjectNumber: number): SpatialObject;
-// export function MoveObject(object: mod.Object, positionDelta: Vector, rotationDelta: Vector): void;
-// export function GetObjectPosition(object: mod.Object): Vector;
-// export function GetObjectRotation(object: mod.Object): Vector;
+export function OnPlayerUndeploy(eventPlayer: mod.Player): void {
+    if (mod.GetSoldierState(eventPlayer, mod.SoldierStateBool.IsAISoldier)) {
+        dynamicLogger?.log(`Player-${mod.GetObjId(eventPlayer)} is an AI soldier, forcing into spawn queue.`);
+        FFAAutoSpawningSoldier.forceIntoQueue(eventPlayer);
+        return;
+    }
 
-let test = false;
+    FFAAutoSpawningSoldier.startDelay(eventPlayer);
 
-export function OngoingSpawner(eventSpawner: mod.Spawner): void {
-    if (test) return;
+    if (mod.GetObjId(eventPlayer) != 0) return;
 
-    test = true;
+    staticLogger?.clear();
+    debugMenu?.hide();
+    mod.EnableUIInputMode(false, eventPlayer);
+}
 
-    const id = mod.GetObjId(eventSpawner);
-    const position = mod.GetObjectPosition(eventSpawner);
-    const rotation = mod.GetObjectRotation(eventSpawner);
+export async function OnPlayerUIButtonEvent(player: mod.Player, widget: mod.UIWidget, event: mod.UIButtonEvent) {
+    await UI.handleButtonClick(player, widget, event);
+}
 
-    mod.Wait(20).then(() => {
-        dynamicLogger?.log(`Spawner-${id} is at ${mod.XComponentOf(position).toFixed(2)}, ${mod.YComponentOf(position).toFixed(2)}, ${mod.ZComponentOf(position).toFixed(2)} and facing ${mod.XComponentOf(rotation).toFixed(0)}, ${mod.YComponentOf(rotation).toFixed(0)}, ${mod.ZComponentOf(rotation).toFixed(0)}!`);
+export function OnPlayerDeployed(eventPlayer: mod.Player): void {
+    dynamicLogger?.log(`Player-${mod.GetObjId(eventPlayer)} spawned on Team-${mod.GetObjId(mod.GetTeam(eventPlayer))}.`);
+
+    if (mod.GetObjId(eventPlayer) != 0) return;
+
+    debug(eventPlayer);
+}
+
+function debug(player: mod.Player): void {
+    mod.Wait(0.5).then(() => {
+        if (!mod.GetSoldierState(player, mod.SoldierStateBool.IsAlive)) return;
+
+        if (mod.GetSoldierState(player, mod.SoldierStateBool.IsProne) && mod.GetSoldierState(player, mod.SoldierStateBool.IsReloading)) {
+            debugMenu?.show();
+            mod.EnableUIInputMode(true, player);
+        }
+
+        staticLogger?.log(`Position: ${getVectorString(player, mod.SoldierStateVector.GetPosition)}`, 0);
+        staticLogger?.log(`Facing: ${getVectorString(player, mod.SoldierStateVector.GetFacingDirection)}`, 1);
+
+        debug(player);
     });
+}
+
+function getVectorString(player: mod.Player, type: mod.SoldierStateVector): string {
+    const vector = mod.GetSoldierState(player, type);
+
+    return `<${mod.XComponentOf(vector).toFixed(2)}, ${mod.YComponentOf(vector).toFixed(2)}, ${mod.ZComponentOf(vector).toFixed(2)}>`;
 }
