@@ -8,8 +8,8 @@
     },
     "bountyHunter": {
         "hud": {
-            "killStreak": "Kill Streak: {}",
-            "spotted": "Spotted: {} seconds every {} seconds",
+            "killStreak": "Streak: {}        Bounty on your head: {}",
+            "spotted": "Spotted for {} seconds every {} seconds",
             "notSpotted": "Not Spotted"
         },
         "scoreboard": {
@@ -18,8 +18,8 @@
             "columns": {
                 "points": "Points",
                 "kills": "Kills",
+                "assists": "Assists",
                 "deaths": "Deaths",
-                "streak": "Streak",
                 "bounty": "Bounty"
             }
         }
@@ -130,7 +130,10 @@
     },
     "debug": {
         "buttons": {
-            "toggleLoggers": "Toggle Loggers",
+            "toggleStaticLogger": "Toggle Static Logger",
+            "toggleDynamicLogger": "Toggle Dynamic Logger",
+            "giveKill": "Give Kill",
+            "giveAssist": "Give Assist",
             "close": "Close"
         }
     }

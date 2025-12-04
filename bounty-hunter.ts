@@ -83,6 +83,8 @@ class UI {
             delete: () => mod.DeleteUIWidget(uiWidget()),
             getPosition: () => UI.getPosition(uiWidget()),
             setPosition: (x: number, y: number) => mod.SetUIWidgetPosition(uiWidget(), mod.CreateVector(x, y, 0)),
+            getSize: () => UI.getSize(uiWidget()),
+            setSize: (width: number, height: number) => mod.SetUIWidgetSize(uiWidget(), mod.CreateVector(width, height, 0)),
         };
 
         for (const childParams of params.childrenParams ?? []) {
@@ -90,7 +92,7 @@ class UI {
 
             const child =
                 childParams.type === 'container' ? UI.createContainer(childParams) :
-                childParams.type === 'text' ? UI.createText(childParams) :
+                childParams.type === 'text' ? UI.createText(childParams as UI.TextParams) :
                 childParams.type === 'button' ? UI.createButton(childParams as UI.ButtonParams) :
                 undefined;
 
@@ -134,7 +136,7 @@ class UI {
             params.bgColor ?? UI.COLORS.WHITE,
             params.bgAlpha ?? 0,
             params.bgFill ?? mod.UIBgFill.None,
-            params.message ?? mod.Message(""),
+            params.message,
             params.textSize ?? 36,
             params.textColor ?? UI.COLORS.BLACK,
             params.textAlpha ?? 1,
@@ -161,6 +163,8 @@ class UI {
             delete: () => mod.DeleteUIWidget(uiWidget()),
             getPosition: () => UI.getPosition(uiWidget()),
             setPosition: (x: number, y: number) => mod.SetUIWidgetPosition(uiWidget(), mod.CreateVector(x, y, 0)),
+            getSize: () => UI.getSize(uiWidget()),
+            setSize: (width: number, height: number) => mod.SetUIWidgetSize(uiWidget(), mod.CreateVector(width, height, 0)),
             setMessage: (message: mod.Message) => mod.SetUITextLabel(uiWidget(), message),
         };
     }
@@ -219,7 +223,23 @@ class UI {
     
         const buttonUiWidget = () => mod.FindUIWidgetWithName(buttonName) as mod.UIWidget;
 
-        const button: UI.Button = {
+        const label = params.label ? UI.createText({
+            ...params.label,
+            name: `${container.name}_label`,
+            parent: containerUiWidget,
+            width: params.width,
+            height: params.height,
+            visible: true,
+            depth: params.depth,
+        }) : undefined;
+
+        const setSize = (width: number, height: number) => {
+            container.setSize(width, height);
+            mod.SetUIWidgetSize(buttonUiWidget(), mod.CreateVector(width, height, 0));
+            label?.setSize(width, height);
+        };
+
+        return {
             type: UI.Type.Button,
             name: container.name,
             uiWidget: () => containerUiWidget,
@@ -232,28 +252,15 @@ class UI {
             delete: () => mod.DeleteUIWidget(containerUiWidget),
             getPosition: () => UI.getPosition(containerUiWidget),
             setPosition: (x: number, y: number) => mod.SetUIWidgetPosition(containerUiWidget, mod.CreateVector(x, y, 0)),
+            getSize: () => UI.getSize(containerUiWidget),
+            setSize: setSize,
             isEnabled: () => mod.GetUIButtonEnabled(buttonUiWidget()),
             enable: () => mod.SetUIButtonEnabled(buttonUiWidget(), true),
             disable: () => mod.SetUIButtonEnabled(buttonUiWidget(), false),
+            labelName: label?.name,
+            labelUiWidget: label?.uiWidget,
+            setLabelMessage: label?.setMessage,
         };
-
-        if (!params.label) return button;
-
-        const label = UI.createText({
-            ...params.label,
-            name: `${button.name}_label`,
-            parent: button.uiWidget(),
-            width: params.width,
-            height: params.height,
-            visible: true,
-            depth: params.depth,
-        });
-    
-        button.labelName = `${container.name}_label`;
-        button.labelUiWidget = label.uiWidget;
-        button.setLabelMessage = label.setMessage;
-    
-        return button;
     }
 
     public static async handleButtonClick(player: mod.Player, widget: mod.UIWidget, event: mod.UIButtonEvent): Promise<void> {
@@ -287,16 +294,22 @@ class UI {
         const position = mod.GetUIWidgetPosition(widget);
         return { x: mod.XComponentOf(position), y: mod.YComponentOf(position) };
     }
+
+    private static getSize(widget: mod.UIWidget): { width: number, height: number } {
+        const size = mod.GetUIWidgetSize(widget);
+        return { width: mod.XComponentOf(size), height: mod.YComponentOf(size) };
+    }
+
 }
 
 namespace UI {
 
     export enum Type {
-        Root = "root",
-        Container = "container",
-        Text = "text",
-        Button = "button",
-        Unknown = "unknown",
+        Root = 'root',
+        Container = 'container',
+        Text = 'text',
+        Button = 'button',
+        Unknown = 'unknown',
     }
 
     export type Node = {
@@ -313,6 +326,8 @@ namespace UI {
         delete: () => void,
         getPosition: () => { x: number, y: number },
         setPosition: (x: number, y: number) => void,
+        getSize: () => { width: number, height: number },
+        setSize: (width: number, height: number) => void,
     }
 
     export type Container = Element & {
@@ -356,7 +371,7 @@ namespace UI {
     }
 
     export interface TextParams extends Params {
-        message?: mod.Message,
+        message: mod.Message,
         textSize?: number,
         textColor?: mod.Vector,
         textAlpha?: number,
@@ -364,7 +379,7 @@ namespace UI {
     }
 
     export interface LabelParams {
-        message?: mod.Message,
+        message: mod.Message,
         textSize?: number,
         textColor?: mod.Vector,
         textAlpha?: number,
@@ -390,7 +405,7 @@ namespace UI {
 
 class Logger {
 
-    static readonly PADDING: number = 10;
+    private static readonly PADDING: number = 10;
 
     constructor(
         player?: mod.Player,
@@ -442,38 +457,38 @@ class Logger {
 
     private rowHeight: number;
 
-    maxRows: number;
+    public maxRows: number;
 
-    name(): string {
+    public name(): string {
         return this.window.name;
     }
 
-    isVisible(): boolean {
+    public isVisible(): boolean {
         return this.window.isVisible();
     }
 
-    show(): void {
+    public show(): void {
         this.window.show();
     }
 
-    hide(): void {
+    public hide(): void {
         this.window.hide();
     }
 
-    toggle(): void {
+    public toggle(): void {
         this.isVisible() ? this.hide() : this.show();
     }
 
-    clear(): void {
+    public clear(): void {
         Object.keys(this.rows).forEach(key => this.deleteRow(parseInt(key)));
     }
 
-    destroy(): void {
+    public destroy(): void {
         this.clear();
         this.window.delete();
     }
 
-    log(text: string, rowIndex?: number): void {
+    public log(text: string, rowIndex?: number): void {
         return this.staticRows ? this.logInRow(text, rowIndex ?? 0) : this.logNext(text);
     }
 
@@ -826,7 +841,9 @@ let staticLogger: Logger | undefined;
 let dynamicLogger: Logger | undefined;
 let debugMenu: UI.Container | undefined;
 
+// TODO: Either handle the case where there are no spawns, or spawn at HQ1.
 class FFAAutoSpawningSoldier {
+
     private static allSoldiers: { [playerId: number]: FFAAutoSpawningSoldier } = {};
 
     private static readonly DELAY: number = 10;
@@ -847,7 +864,7 @@ class FFAAutoSpawningSoldier {
 
     private static queueProcessingActive: boolean = false;
 
-    public static setSpawns(spawns: { location: mod.Vector, orientation: number }[]) {
+    public static setSpawns(spawns: { location: mod.Vector, orientation: number }[]): void {
         FFAAutoSpawningSoldier.spawns = spawns.map(spawn => {
             return {
                 spawnPoint: mod.GetSpawnPoint(mod.GetObjId(mod.SpawnObject(mod.RuntimeSpawn_Common.PlayerSpawner, spawn.location, FFAAutoSpawningSoldier.getRotationVector(spawn.orientation)))), // TODO: check if this can be just `as mod.SpawnPoint`.
@@ -855,7 +872,7 @@ class FFAAutoSpawningSoldier {
             };
         });
 
-        dynamicLogger?.log(`FFAASS: Set ${FFAAutoSpawningSoldier.spawns.length} spawn points.`);
+        dynamicLogger?.log(`<FFAASS>: Set ${FFAAutoSpawningSoldier.spawns.length} spawn points.`);
     }
 
     private static getRotationVector(orientation: number): mod.Vector {
@@ -878,7 +895,7 @@ class FFAAutoSpawningSoldier {
             const distanceToClosestPlayer = FFAAutoSpawningSoldier.getDistanceToClosestPlayer(candidate.location);
         
             if (distanceToClosestPlayer >= FFAAutoSpawningSoldier.SAFE_MINIMUM_DISTANCE && distanceToClosestPlayer <= FFAAutoSpawningSoldier.ACCEPTABLE_MAXIMUM_DISTANCE) {
-                dynamicLogger?.log(`FFAASS: Spawn-${index} is ideal (${distanceToClosestPlayer.toFixed(2)}m to closest player).`);
+                dynamicLogger?.log(`<FFAASS>: Spawn-${index} is ideal (${distanceToClosestPlayer.toFixed(2)}m).`);
                 return candidate.spawnPoint; 
             }
         
@@ -888,7 +905,7 @@ class FFAAutoSpawningSoldier {
             }
         }
 
-        dynamicLogger?.log(`FFAASS: Non-ideal fallback spawn is ${maxDistance.toFixed(2)}m to closest player.`);
+        dynamicLogger?.log(`<FFAASS>: Non-ideal fallback spawn (${maxDistance.toFixed(2)}m).`);
 
         return bestFallback;
     }
@@ -909,10 +926,10 @@ class FFAAutoSpawningSoldier {
             return;
         }
 
-        dynamicLogger?.log(`FFAASS: Processing ${FFAAutoSpawningSoldier.spawnQueue.length} in queue.`);
+        dynamicLogger?.log(`<FFAASS>: Processing ${FFAAutoSpawningSoldier.spawnQueue.length} in queue.`);
 
         if (FFAAutoSpawningSoldier.spawnQueue.length == 0) {
-            dynamicLogger?.log(`FFAASS: No players in queue. Suspending processing.`);
+            dynamicLogger?.log(`<FFAASS>: No players in queue. Suspending processing.`);
             FFAAutoSpawningSoldier.queueProcessingActive = false;
             return;
         }
@@ -922,7 +939,7 @@ class FFAAutoSpawningSoldier {
 
             if (!soldier || soldier.deleteIfNotValid()) continue;
 
-            dynamicLogger?.log(`FFAASS: Spawning Player-${soldier.playerId}.`);
+            dynamicLogger?.log(`<FFAASS>: Spawning Player-${soldier.playerId}.`);
 
             mod.SpawnPlayerFromSpawnPoint(soldier.player, FFAAutoSpawningSoldier.getBestSpawnPoint());
         }
@@ -931,7 +948,7 @@ class FFAAutoSpawningSoldier {
     }
 
     public static startDelay(player: mod.Player): void {
-        dynamicLogger?.log(`FFAASS: Start delay request for Player-${mod.GetObjId(player)}.`);
+        dynamicLogger?.log(`<FFAASS>: Start delay request for Player-${mod.GetObjId(player)}.`);
 
         const soldier = FFAAutoSpawningSoldier.allSoldiers[mod.GetObjId(player)];
 
@@ -951,7 +968,7 @@ class FFAAutoSpawningSoldier {
     }
 
     public static enableSpawnQueueProcessing(): void {
-        dynamicLogger?.log(`FFAASS: Enabling processing spawn queue.`);
+        dynamicLogger?.log(`<FFAASS>: Enabling processing spawn queue.`);
 
         if (FFAAutoSpawningSoldier.queueProcessingEnabled) return;
 
@@ -960,7 +977,7 @@ class FFAAutoSpawningSoldier {
     }
 
     public static disableSpawnQueueProcessing(): void {
-        dynamicLogger?.log(`FFAASS: Disabling processing spawn queue.`);
+        dynamicLogger?.log(`<FFAASS>: Disabling processing spawn queue.`);
 
         FFAAutoSpawningSoldier.queueProcessingEnabled = false;
     }
@@ -1025,12 +1042,16 @@ class FFAAutoSpawningSoldier {
         this.countdownUI = UI.createText({
             x: 0,
             y: 60,
-            width: 300,
-            height: 20,
+            width: 400,
+            height: 30,
             anchor: mod.UIAnchor.TopCenter,
             message: mod.Message(mod.stringkeys.ffaAutoSpawningSoldier.countdown, this.delayCountdown),
-            textSize: 20,
+            textSize: 30,
             textColor: UI.COLORS.GREEN,
+            bgColor: UI.COLORS.BLACK,
+            bgAlpha: 0.5,
+            bgFill: mod.UIBgFill.Solid,
+            padding: 5,
             visible: false,
         }, player);
     }
@@ -1046,7 +1067,7 @@ class FFAAutoSpawningSoldier {
     private countdownUI?: UI.Text;
 
     private startDelay(): void {
-        dynamicLogger?.log(`FFAASS: Starting delay for Player-${this.playerId}.`);
+        dynamicLogger?.log(`<FFAASS>: Starting delay for Player-${this.playerId}.`);
 
         this.countdownUI?.show();
         this.promptUI?.hide();
@@ -1075,7 +1096,7 @@ class FFAAutoSpawningSoldier {
     private addToQueue(): void {
         FFAAutoSpawningSoldier.spawnQueue.push(this);
 
-        dynamicLogger?.log(`FFAASS: Player-${this.playerId} added to queue (${FFAAutoSpawningSoldier.spawnQueue.length} total).`);
+        dynamicLogger?.log(`<FFAASS>: Player-${this.playerId} added to queue (${FFAAutoSpawningSoldier.spawnQueue.length} total).`);
 
         this.countdownUI?.hide();
         this.promptUI?.hide();
@@ -1083,22 +1104,25 @@ class FFAAutoSpawningSoldier {
 
         if (!FFAAutoSpawningSoldier.queueProcessingEnabled || FFAAutoSpawningSoldier.queueProcessingActive) return;
 
-        dynamicLogger?.log(`FFAASS: Restarting spawn queue processing.`);
+        dynamicLogger?.log(`<FFAASS>: Restarting spawn queue processing.`);
         FFAAutoSpawningSoldier.processSpawnQueue();
     }
 
     private deleteIfNotValid(): boolean {
         if (mod.IsPlayerValid(this.player)) return false;
 
+        dynamicLogger?.log(`<FFAASS>: Player-${this.playerId} is no longer in the game!`);
+
         this.promptUI?.delete();
         this.countdownUI?.delete();
         delete FFAAutoSpawningSoldier.allSoldiers[this.playerId];
         return true;
     }
+
 }
 
-// TODO: delete if not valid, for player and easy cleanup.
 class BountyHunter {
+
     private static allBountyHunters: { [playerId: number]: BountyHunter } = {};
     
     public static readonly TARGET_POINTS: number = 250;
@@ -1107,38 +1131,158 @@ class BountyHunter {
 
     public static readonly SPOTTING_DURTATION: number = 3;
 
-    public static readonly BOUNTY_MULTIPLIERS: Record<number, number> = {
-        0: 1,
-        1: 1,
-        2: 1,
-        3: 1,
-        4: 1,
-        5: 1,
-        6: 2,
-        7: 3,
-        8: 4,
-        9: 5,
-        10: 6,
+    public static readonly BOUNTY_MULTIPLIERS: number[] = [
+        1, // 0
+        1, // 1
+        1, // 2
+        2, // 3
+        2, // 4
+        4, // 5
+        5, // 6
+        6, // 7
+        7, // 8
+        8, // 9
+        8, // 10
+    ];
+
+    // NOTE: Set these to either 0 or a number at least 1 second larger than `SPOTTING_DURTATION`.
+    public static readonly STREAK_SPOTTING_DELAYS: number[] = [
+        0, // 0
+        30, // 1
+        27, // 2
+        24, // 3
+        21, // 4
+        19, // 5
+        16, // 6
+        13, // 7
+        10, // 8
+        7, // 9
+        4, // 10
+    ];
+
+    public static getLeader(): BountyHunter | undefined {
+        return Object.values(BountyHunter.allBountyHunters).reduce((leader: BountyHunter | undefined, bountyHunter: BountyHunter) => {
+            return leader && leader.points > bountyHunter.points ? leader : bountyHunter;
+        }, undefined);
+    }
+    
+    public static getFromPlayer(player: mod.Player): BountyHunter {
+        return BountyHunter.allBountyHunters[mod.GetObjId(player)];
     }
 
-    public static readonly STREAK_SPOTTING_DELAYS: Record<number, number> = {
-        0: 0,
-        1: 0,
-        2: 0,
-        3: 0,
-        4: 0,
-        5: 0,
-        6: 11,
-        7: 9,
-        8: 7,
-        9: 5,
-        10: 3,
+    public static handleKill(killerPlayer: mod.Player, victimPlayer?: mod.Player): void {
+        const killer = BountyHunter.getFromPlayer(killerPlayer);
+        const victim = victimPlayer && BountyHunter.getFromPlayer(victimPlayer);
+        const victimIsValid = victim && !victim.deleteIfNotValid();
+
+        dynamicLogger?.log(`Player-${killer?.playerId} killed Player-${victim ? victim.playerId : 'U'}!`);
+
+        if (victim) {
+            victim.killBeforeDeath = victim.killStreak;
+            victim.setKillStreak(0);
+            ++victim.deaths;
+
+            mod.SetScoreboardPlayerValues(
+                victimPlayer,
+                victim.points,
+                victim.kills,
+                victim.assists,
+                victim.deaths,
+                BountyHunter.getBounty(0),
+            );
+        }
+
+        if (killer.playerId == victim?.playerId) return;
+
+        const bounty = BountyHunter.getBounty(victim?.killStreak ?? 0);
+
+        killer.points += bounty;
+        ++killer.kills;
+        killer.setKillStreak(killer.killStreak + 1);
+
+        dynamicLogger?.log(`Player-${killer.playerId} got ${bounty}pts (${killer.killStreak} kill streak)!`);
+
+        if (killer.deleteIfNotValid()) return;
+
+        mod.SetGameModeScore(killerPlayer, killer.points);
+
+        mod.SetScoreboardPlayerValues(
+            killerPlayer,
+            killer.points,
+            killer.kills,
+            killer.assists,
+            killer.deaths,
+            BountyHunter.getBounty(killer.killStreak)
+        );
+
+        if (killer.isSpotted || !BountyHunter.getSpottedDelay(killer.killStreak)) return;
+
+        killer.isSpotted = true;
+        killer.spot();
+    }
+
+    public static handleAssist(assisterPlayer: mod.Player, victimPlayer?: mod.Player): void {
+        const assister = BountyHunter.getFromPlayer(assisterPlayer);
+        const victim = victimPlayer && BountyHunter.getFromPlayer(victimPlayer);
+
+        dynamicLogger?.log(`Player-${assister?.playerId} assisted in killing Player-${victim ? victim.playerId : 'U'}!`);
+
+        if (assister.playerId == victim?.playerId) return;
+
+        // Need to handle the race condition where `handleAssist` and `handleKill` for the same victim can be called in any order.
+        const killStreakBeforeDeath = victim?.killBeforeDeath ?? 0;
+        const killStreak = victim?.killStreak ?? 0;
+
+        const bounty = BountyHunter.getBounty(killStreak || killStreakBeforeDeath);
+
+        assister.points += bounty / 2;
+        ++assister.assists;
+
+        dynamicLogger?.log(`Player-${assister.playerId} got ${bounty / 2}pts!`);
+
+        if (assister.deleteIfNotValid()) return;
+
+        mod.SetGameModeScore(assisterPlayer, assister.points);
+
+        mod.SetScoreboardPlayerValues(
+            assisterPlayer,
+            assister.points,
+            assister.kills,
+            assister.assists,
+            assister.deaths,
+            BountyHunter.getBounty(assister.killStreak)
+        );
+    }
+
+    public static handleDeployed(player: mod.Player): void {
+        BountyHunter.getFromPlayer(player).killBeforeDeath = 0;
+    }
+
+    public static getKillStreakMessage(killStreak: number): mod.Message {
+        return mod.Message(mod.stringkeys.bountyHunter.hud.killStreak, killStreak, BountyHunter.getBounty(killStreak));
+    }
+
+    public static getSpottedMessage(delay: number): mod.Message {
+        return delay < 1
+            ? mod.Message(mod.stringkeys.bountyHunter.hud.notSpotted)
+            : mod.Message(mod.stringkeys.bountyHunter.hud.spotted, BountyHunter.SPOTTING_DURTATION, delay);
+    }
+
+    public static getSpottedDelay(killStreak: number): number {
+        const delays = BountyHunter.STREAK_SPOTTING_DELAYS;
+        return killStreak < delays.length ? delays[killStreak] : delays[delays.length - 1];
+    }
+
+    public static getBounty(killStreak: number): number {
+        const multipliers = BountyHunter.BOUNTY_MULTIPLIERS;
+        return BountyHunter.BASE_KILL_POINTS * (killStreak < multipliers.length ? multipliers[killStreak] : multipliers[multipliers.length - 1]);
     }
 
     constructor(player: mod.Player) {
-        dynamicLogger?.log(`Player-${mod.GetObjId(player)} has joined the game!`);
         this.player = player;
-        BountyHunter.allBountyHunters[mod.GetObjId(player)] = this;
+        this.playerId = mod.GetObjId(player);
+
+        BountyHunter.allBountyHunters[this.playerId] = this;
 
         const container = UI.createContainer({
             x: 0,
@@ -1154,10 +1298,10 @@ class BountyHunter {
         this.killStreakUI = UI.createText({
             x: 0,
             y: 60,
-            width: 200,
+            width: 400,
             height: 20,
             anchor: mod.UIAnchor.TopCenter,
-            message: mod.Message(mod.stringkeys.bountyHunter.hud.killStreak, 0),
+            message: BountyHunter.getKillStreakMessage(0),
             textSize: 20,
             textColor: UI.COLORS.GREEN,
             parent: container,
@@ -1169,45 +1313,46 @@ class BountyHunter {
             width: 400,
             height: 20,
             anchor: mod.UIAnchor.TopCenter,
-            message: mod.Message(mod.stringkeys.bountyHunter.hud.notSpotted),
+            message: BountyHunter.getSpottedMessage(0),
             textSize: 20,
             textColor: UI.COLORS.GREEN,
             parent: container,
         }, player);
     }
 
-    public static leader?: BountyHunter;
-
     private killStreakUI: UI.Text;
 
     private spottedUI: UI.Text;
 
-    public isSpotted: boolean = false;
+    private playerId: number;
+
+    private isSpotted: boolean = false;
 
     public player: mod.Player;
 
     public kills: number = 0;
 
+    public assists: number = 0;
+
     public deaths: number = 0;
 
     public killStreak: number = 0;
 
+    public killBeforeDeath: number = 0;
+
     public points: number = 0;
 
     public spot(): void {
-        if (!mod.IsPlayerValid(this.player)) return BountyHunter.delete(this.player);
+        if (this.deleteIfNotValid()) return;
 
-        if (!this.isSpotted) {
-            dynamicLogger?.log(`Player-${mod.GetObjId(this.player)} is not spotted!`);
-            this.spottedUI.setMessage(mod.Message(mod.stringkeys.bountyHunter.hud.notSpotted));
+        const delay = BountyHunter.getSpottedDelay(this.killStreak);
+
+        if (delay < 1) {
+            dynamicLogger?.log(`<BH>: Suspending spotting for Player-${this.playerId}.`);
             return;
         }
 
-        dynamicLogger?.log(`Player-${mod.GetObjId(this.player)} is spotted!`);
-
-        const delay = BountyHunter.STREAK_SPOTTING_DELAYS[this.killStreak];
-
-        this.spottedUI.setMessage(mod.Message(mod.stringkeys.bountyHunter.hud.spotted, BountyHunter.SPOTTING_DURTATION, delay));
+        dynamicLogger?.log(`<BH>: Spotting Player-${this.playerId} every ${delay}s!`);
 
         mod.SpotTarget(this.player, BountyHunter.SPOTTING_DURTATION, mod.SpotStatus.SpotInBoth);
 
@@ -1215,80 +1360,23 @@ class BountyHunter {
     }
 
     public setKillStreak(killStreak: number): void {
-        this.killStreak = killStreak;
-        this.killStreakUI.setMessage(mod.Message(mod.stringkeys.bountyHunter.hud.killStreak, killStreak));
+        const delay = BountyHunter.getSpottedDelay(this.killStreak = killStreak);
+        this.killStreakUI.setMessage(BountyHunter.getKillStreakMessage(killStreak));
+        this.spottedUI.setMessage(BountyHunter.getSpottedMessage(delay));
     }
 
-    public static getFromPlayer(player: mod.Player): BountyHunter {
-        return BountyHunter.allBountyHunters[mod.GetObjId(player)];
+    private deleteIfNotValid(): boolean {
+        if (mod.IsPlayerValid(this.player)) return false;
+
+        dynamicLogger?.log(`<BH>: Player-${this.playerId} is no longer in the game!`);
+
+        this.killStreak = 0;
+
+        delete BountyHunter.allBountyHunters[this.playerId];
+
+        return true;
     }
 
-    public static handleKill(killerPlayer: mod.Player, victimPlayer: mod.Player): void {
-        const killerId = mod.GetObjId(killerPlayer);
-        const victimId = mod.GetObjId(victimPlayer);
-
-        dynamicLogger?.log(`Player-${killerId} killed Player-${victimId}!`);
-
-        const killer = BountyHunter.getFromPlayer(killerPlayer);
-        const victim = BountyHunter.getFromPlayer(victimPlayer);
-
-        const bounty = BountyHunter.BASE_KILL_POINTS * BountyHunter.BOUNTY_MULTIPLIERS[victim.killStreak];
-
-        victim.setKillStreak(0);
-        victim.isSpotted = false;
-        ++victim.deaths;
-
-        if (mod.IsPlayerValid(victimPlayer)) {
-            mod.SetScoreboardPlayerValues(
-                victimPlayer,
-                victim.points,
-                victim.kills,
-                victim.deaths,
-                0,
-                BountyHunter.BASE_KILL_POINTS * BountyHunter.BOUNTY_MULTIPLIERS[0],
-            );
-        } else {
-            BountyHunter.delete(victimPlayer);
-        }
-
-        if (killerId == victimId) return;
-
-        killer.points += bounty;
-        ++killer.kills;
-        killer.setKillStreak(killer.killStreak + 1);
-
-        dynamicLogger?.log(`Player-${mod.GetObjId(killer.player)} awarded ${bounty} points and is on a ${killer.killStreak} kill streak!`);
-
-        if (!mod.IsPlayerValid(killerPlayer)) return BountyHunter.delete(killerPlayer);
-
-        mod.SetGameModeScore(killerPlayer, killer.points);
-
-        mod.SetScoreboardPlayerValues(
-            killerPlayer,
-            killer.points,
-            killer.kills,
-            killer.deaths,
-            killer.killStreak,
-            BountyHunter.BASE_KILL_POINTS * BountyHunter.BOUNTY_MULTIPLIERS[killer.killStreak]
-        );
-
-        if (!BountyHunter.leader || killer.points > BountyHunter.leader.points) {
-            BountyHunter.leader = killer;
-        }
-
-        if (killer.isSpotted || !BountyHunter.STREAK_SPOTTING_DELAYS[killer.killStreak]) return;
-
-        killer.isSpotted = true;
-        killer.spot();
-    }
-
-    public static delete(player: mod.Player): void {
-        dynamicLogger?.log(`Player-${mod.GetObjId(player)} is no longer in the game!`);
-
-        BountyHunter.getFromPlayer(player).isSpotted = false;
-
-        delete BountyHunter.allBountyHunters[mod.GetObjId(player)];
-    }
 }
 
 const DEBUG_MENU = {
@@ -1311,14 +1399,70 @@ const DEBUG_MENU = {
             bgColor: UI.COLORS.GREY_25,
             baseColor: UI.COLORS.BLACK,
             label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.toggleLoggers),
+                message: mod.Message(mod.stringkeys.debug.buttons.toggleStaticLogger),
                 textSize: 20,
                 textColor: UI.COLORS.GREEN,
             },
             onClick: async (player: mod.Player): Promise<void> => {
-                dynamicLogger?.log(`Clicked toggle loggers button`);
+                dynamicLogger?.log(`<DEBUG>: Clicked toggle static logger button`);
                 staticLogger?.toggle();
+            },
+        },
+        {
+            type: UI.Type.Button,
+            x: 0,
+            y: 20,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            bgColor: UI.COLORS.GREY_25,
+            baseColor: UI.COLORS.BLACK,
+            label: {
+                message: mod.Message(mod.stringkeys.debug.buttons.toggleDynamicLogger),
+                textSize: 20,
+                textColor: UI.COLORS.GREEN,
+            },
+            onClick: async (player: mod.Player): Promise<void> => {
+                dynamicLogger?.log(`<DEBUG>: Clicked toggle dynamic logger button`);
                 dynamicLogger?.toggle();
+            },
+        },
+        {
+            type: UI.Type.Button,
+            x: 0,
+            y: 40,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            bgColor: UI.COLORS.GREY_25,
+            baseColor: UI.COLORS.BLACK,
+            label: {
+                message: mod.Message(mod.stringkeys.debug.buttons.giveKill),
+                textSize: 20,
+                textColor: UI.COLORS.GREEN,
+            },
+            onClick: async (player: mod.Player): Promise<void> => {
+                dynamicLogger?.log(`<DEBUG>: Clicked give kill button`);
+                BountyHunter.handleKill(player);
+            },
+        },
+        {
+            type: UI.Type.Button,
+            x: 0,
+            y: 60,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            bgColor: UI.COLORS.GREY_25,
+            baseColor: UI.COLORS.BLACK,
+            label: {
+                message: mod.Message(mod.stringkeys.debug.buttons.giveAssist),
+                textSize: 20,
+                textColor: UI.COLORS.GREEN,
+            },
+            onClick: async (player: mod.Player): Promise<void> => {
+                dynamicLogger?.log(`<DEBUG>: Clicked give assist button`);
+                BountyHunter.handleAssist(player);
             },
         },
         {
@@ -1336,13 +1480,17 @@ const DEBUG_MENU = {
                 textColor: UI.COLORS.GREEN,
             },
             onClick: async (player: mod.Player): Promise<void> => {
-                dynamicLogger?.log(`Clicked close button`);
+                dynamicLogger?.log(`<DEBUG>: Clicked close button`);
                 mod.EnableUIInputMode(false, player);
                 debugMenu?.hide();
             },
         },
     ]
 };
+
+export function OnPlayerUIButtonEvent(player: mod.Player, widget: mod.UIWidget, event: mod.UIButtonEvent) {
+    UI.handleButtonClick(player, widget, event);
+}
 
 export function OnGameModeStarted(): void {
     mod.SetGameModeTimeLimit(1200); // 20 minutes
@@ -1353,8 +1501,8 @@ export function OnGameModeStarted(): void {
     mod.SetScoreboardColumnNames(
         mod.Message(mod.stringkeys.bountyHunter.scoreboard.columns.points),
         mod.Message(mod.stringkeys.bountyHunter.scoreboard.columns.kills),
+        mod.Message(mod.stringkeys.bountyHunter.scoreboard.columns.assists),
         mod.Message(mod.stringkeys.bountyHunter.scoreboard.columns.deaths),
-        mod.Message(mod.stringkeys.bountyHunter.scoreboard.columns.streak),
         mod.Message(mod.stringkeys.bountyHunter.scoreboard.columns.bounty),
     );
 
@@ -1382,8 +1530,10 @@ export function OnGameModeStarted(): void {
 export function OnTimeLimitReached(): void {
     if (!mod.GetMatchTimeElapsed()) return;
 
-    if (BountyHunter.leader) {
-        mod.EndGameMode(BountyHunter.leader.player);
+    const leader = BountyHunter.getLeader();
+
+    if (leader) {
+        mod.EndGameMode(leader.player);
     } else {
         mod.EndGameMode(mod.GetTeam(0));
     }
@@ -1394,7 +1544,7 @@ export function OnPlayerJoinGame(eventPlayer: mod.Player): void {
     new FFAAutoSpawningSoldier(eventPlayer);
 
     if (mod.GetSoldierState(eventPlayer, mod.SoldierStateBool.IsAISoldier)) {
-        dynamicLogger?.log(`Player-${mod.GetObjId(eventPlayer)} is an AI soldier, forcing into spawn queue.`);
+        dynamicLogger?.log(`<SCRIPT>: Player-${mod.GetObjId(eventPlayer)} is AI, forcing into spawn queue.`);
         FFAAutoSpawningSoldier.forceIntoQueue(eventPlayer);
         return;
     }
@@ -1404,17 +1554,21 @@ export function OnPlayerJoinGame(eventPlayer: mod.Player): void {
     if (mod.GetObjId(eventPlayer) != 0) return;
 
     staticLogger = new Logger(eventPlayer, { staticRows: true, visible: false, anchor: mod.UIAnchor.TopLeft });
-    dynamicLogger = new Logger(eventPlayer, { staticRows: false, visible: false, anchor: mod.UIAnchor.TopRight, height: 700 });
+    dynamicLogger = new Logger(eventPlayer, { staticRows: false, visible: false, anchor: mod.UIAnchor.TopRight, width: 500, height: 700 });
     debugMenu = UI.createContainer(DEBUG_MENU, eventPlayer);
 }
 
-export function OnPlayerDied(eventPlayer: mod.Player, eventOtherPlayer: mod.Player, eventDeathType: mod.DeathType, eventWeaponUnlock: mod.WeaponUnlock): void {
-    BountyHunter.handleKill(eventOtherPlayer, eventPlayer);
+export function OnPlayerDied(victimPlayer: mod.Player, killerPlayer: mod.Player, eventDeathType: mod.DeathType, eventWeaponUnlock: mod.WeaponUnlock): void {
+    BountyHunter.handleKill(killerPlayer, victimPlayer);
+}
+
+export function OnPlayerEarnedKillAssist(assisterPlayer: mod.Player, victimPlayer: mod.Player): void {
+    BountyHunter.handleAssist(assisterPlayer, victimPlayer);
 }
 
 export function OnPlayerUndeploy(eventPlayer: mod.Player): void {
     if (mod.GetSoldierState(eventPlayer, mod.SoldierStateBool.IsAISoldier)) {
-        dynamicLogger?.log(`Player-${mod.GetObjId(eventPlayer)} is an AI soldier, forcing into spawn queue.`);
+        dynamicLogger?.log(`<SCRIPT>: Player-${mod.GetObjId(eventPlayer)} is AI, forcing into spawn queue.`);
         FFAAutoSpawningSoldier.forceIntoQueue(eventPlayer);
         return;
     }
@@ -1428,14 +1582,15 @@ export function OnPlayerUndeploy(eventPlayer: mod.Player): void {
     mod.EnableUIInputMode(false, eventPlayer);
 }
 
-export async function OnPlayerUIButtonEvent(player: mod.Player, widget: mod.UIWidget, event: mod.UIButtonEvent) {
-    await UI.handleButtonClick(player, widget, event);
-}
-
 export function OnPlayerDeployed(eventPlayer: mod.Player): void {
-    dynamicLogger?.log(`Player-${mod.GetObjId(eventPlayer)} spawned on Team-${mod.GetObjId(mod.GetTeam(eventPlayer))}.`);
+    dynamicLogger?.log(`<SCRIPT>: Player-${mod.GetObjId(eventPlayer)} spawned on Team-${mod.GetObjId(mod.GetTeam(eventPlayer))}.`);
+
+    BountyHunter.handleDeployed(eventPlayer);
 
     if (mod.GetObjId(eventPlayer) != 0) return;
+    
+    dynamicLogger?.show();
+    staticLogger?.show();
 
     debug(eventPlayer);
 }
@@ -1449,15 +1604,17 @@ function debug(player: mod.Player): void {
             mod.EnableUIInputMode(true, player);
         }
 
-        staticLogger?.log(`Position: ${getVectorString(player, mod.SoldierStateVector.GetPosition)}`, 0);
-        staticLogger?.log(`Facing: ${getVectorString(player, mod.SoldierStateVector.GetFacingDirection)}`, 1);
+        staticLogger?.log(`Position: ${getPlayerStateVectorString(player, mod.SoldierStateVector.GetPosition)}`, 0);
+        staticLogger?.log(`Facing: ${getPlayerStateVectorString(player, mod.SoldierStateVector.GetFacingDirection)}`, 1);
 
         debug(player);
     });
 }
 
-function getVectorString(player: mod.Player, type: mod.SoldierStateVector): string {
-    const vector = mod.GetSoldierState(player, type);
+function getPlayerStateVectorString(player: mod.Player, type: mod.SoldierStateVector): string {
+    return getVectorString(mod.GetSoldierState(player, type));
+}
 
+function getVectorString(vector: mod.Vector): string {
     return `<${mod.XComponentOf(vector).toFixed(2)}, ${mod.YComponentOf(vector).toFixed(2)}, ${mod.ZComponentOf(vector).toFixed(2)}>`;
 }
