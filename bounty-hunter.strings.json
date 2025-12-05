@@ -8,8 +8,8 @@
     },
     "bountyHunter": {
         "hud": {
-            "killStreak": "Streak: {}        Bounty on your head: {}",
-            "spotted": "Spotted for {} seconds every {} seconds",
+            "killStreak": "Streak: {}        Bounty on your head: {} PTS",
+            "spotted": "Spotted {} seconds on / {} seconds off",
             "notSpotted": "Not Spotted"
         },
         "scoreboard": {
@@ -22,7 +22,9 @@
                 "deaths": "Deaths",
                 "bounty": "Bounty"
             }
-        }
+        },
+        "worldIconText": "{} PT Bounty",
+        "award": "+ {} PTS"
     },
     "logger": {
         "format": {
@@ -134,6 +136,7 @@
             "toggleDynamicLogger": "Toggle Dynamic Logger",
             "giveKill": "Give Kill",
             "giveAssist": "Give Assist",
+            "giveBotKill": "Give Bot Kill",
             "close": "Close"
         }
     }
