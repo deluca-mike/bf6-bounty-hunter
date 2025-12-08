@@ -1,5 +1,6 @@
 // TODO: Always use blur fill
 // TODO: Consider returning the UI element from each function to chain calls.
+// TODO: button sounds
 class UI {
 
     private static readonly CLICK_HANDLERS = new Map<string, (player: mod.Player) => Promise<void>>();
@@ -748,7 +749,7 @@ class PerformanceStats {
         }
         
         // We didn't even get 30 ticks in the time window, which means the server is under stress.
-        if (tickRate <= 28) {
+        if (tickRate <= 25) {
             this.log(`<PS> Server Stress (Virtual Rate: ${tickRate.toFixed(1)}Hz).`);
             return;
         }
@@ -762,12 +763,6 @@ class FFASpawningSoldier {
     // Time until the player is asked to spawn to delay the prompt again.
     private static readonly DELAY: number = 10;
 
-    // The minimum distance a spawn point must be to another player to be considered safe.
-    private static readonly SAFE_MINIMUM_DISTANCE: number = 20;
-    
-    // The maximum distance a spawn point must be to another player to be considered acceptable.
-    private static readonly ACCEPTABLE_MAXIMUM_DISTANCE: number = 40;
-
     private static readonly PRIME_STEPS: number[] = [2039, 2027, 2017];
 
     // The maximum number of random spawns to consider when trying to find a spawn point for a player.
@@ -777,6 +772,15 @@ class FFASpawningSoldier {
     private static readonly QUEUE_PROCESSING_DELAY: number = 1;
 
     private static spawns: FFASpawningSoldier.Spawn[] = [];
+
+    // The minimum distance a spawn point must be to another player to be considered safe.
+    private static minimumSafeDistance: number = 20;
+    
+    // The maximum distance a spawn point must be to another player to be considered acceptable.
+    private static maximumInterestingDistance: number = 40;
+
+    // The amount to scale the midpoint between the `minimumSafeDistance` and `maximumInterestingDistance` to evaluate a fallback spawn.
+    private static safeOverInterestingFallbackFactor: number = 1.5;
 
     private static spawnQueue: FFASpawningSoldier[] = [];
 
@@ -799,40 +803,65 @@ class FFASpawningSoldier {
     }
 
     private static getBestSpawnPoint(): FFASpawningSoldier.Spawn {
-        // Prime Walking Algorithm
-        const primeSteps = FFASpawningSoldier.PRIME_STEPS;
+        const primeSteps = FFASpawningSoldier.PRIME_STEPS; // Prime Walking Algorithm
         const stepSize = primeSteps[~~mod.RandomReal(0, primeSteps.length) % primeSteps.length]; // Mod because `RandomReal` is apparently inclusive of the end value.
         const spawns = FFASpawningSoldier.spawns;
         const startIndex = ~~mod.RandomReal(0, spawns.length) % spawns.length; // Mod because `RandomReal` is apparently inclusive of the end value.
 
-        let bestFallback: FFASpawningSoldier.Spawn = spawns[startIndex];
-        let maxDistance = -1;
+        let safeFallbackSpawn: FFASpawningSoldier.Spawn | undefined = undefined;
+        let safeFallbackDistance: number = Number.MAX_SAFE_INTEGER;
+
+        let interestingFallbackSpawn: FFASpawningSoldier.Spawn | undefined = undefined;
+        let interestingFallbackDistance: number = -1;
 
         for (let i = 0; i < FFASpawningSoldier.MAX_SPAWN_CHECKS; ++i) {
             const index = (startIndex + (i * stepSize)) % spawns.length;
             const candidate = spawns[index];
-            const distanceToClosestPlayer = FFASpawningSoldier.getDistanceToClosestPlayer(candidate.location);
+            const distance = FFASpawningSoldier.getDistanceToClosestPlayer(candidate.location);
         
-            if (distanceToClosestPlayer >= FFASpawningSoldier.SAFE_MINIMUM_DISTANCE && distanceToClosestPlayer <= FFASpawningSoldier.ACCEPTABLE_MAXIMUM_DISTANCE) {
-                FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `Spawn-${index} is ideal (${distanceToClosestPlayer.toFixed(2)}m).`);
+            // If the spawn is ideal, return it.
+            if (distance >= FFASpawningSoldier.minimumSafeDistance && distance <= FFASpawningSoldier.maximumInterestingDistance) {
+                FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `Spawn-${index} is ideal (${distance.toFixed(2)}m).`);
                 return candidate; 
             }
 
-            if (distanceToClosestPlayer <= maxDistance) continue;
-        
-            bestFallback = candidate;
-            maxDistance = distanceToClosestPlayer;
+            if (distance >= FFASpawningSoldier.minimumSafeDistance) {
+                // If the spawn is safe but not interesting, check if its more interesting than the current most interesting safe fallback.
+                if (distance < safeFallbackDistance) {
+                    safeFallbackSpawn = candidate;
+                    safeFallbackDistance = distance;
+                }
+            } else if (distance <= FFASpawningSoldier.maximumInterestingDistance) {
+                // If the spawn is interesting but not safe, check if its safer than the current safest interesting fallback.
+                if (distance > interestingFallbackDistance) {
+                    interestingFallbackSpawn = candidate;
+                    interestingFallbackDistance = distance;
+                }
+            }
         }
 
-        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Info, `Spawn-${bestFallback.index} is the non-ideal fallback (${maxDistance.toFixed(2)}m).`);
+        if (!safeFallbackSpawn) return interestingFallbackSpawn ?? spawns[startIndex]; // No safe fallback, return the interesting fallback.
 
-        return bestFallback;
+        if (!interestingFallbackSpawn) return safeFallbackSpawn; // No interesting fallback, return the safe fallback.
+
+        // Get the midpoint between the `minimumSafeDistance` and `maximumInterestingDistance` and scale it by the `safeOverInterestingFallbackFactor`.
+        const scaledMidpoint = FFASpawningSoldier.safeOverInterestingFallbackFactor * (FFASpawningSoldier.minimumSafeDistance + FFASpawningSoldier.maximumInterestingDistance) / 2;
+
+        // Determine the fallback spawn by comparing the distance to the scaled midpoint. A higher `safeOverInterestingFallbackFactor` will favour the safe fallback more.
+        const { spawn, distance } =
+            safeFallbackDistance - scaledMidpoint < scaledMidpoint - interestingFallbackDistance
+                ? { spawn: safeFallbackSpawn, distance: safeFallbackDistance }
+                : { spawn: interestingFallbackSpawn, distance: interestingFallbackDistance };
+
+        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Info, `Spawn-${spawn.index} is the non-ideal fallback (${distance.toFixed(2)}m).`);
+
+        return spawn;
     }
 
     private static getDistanceToClosestPlayer(location: mod.Vector): number {
         const closestPlayer = mod.ClosestPlayerTo(location);
 
-        if (!mod.IsPlayerValid(closestPlayer)) return FFASpawningSoldier.SAFE_MINIMUM_DISTANCE; // No players alive on the map.
+        if (!mod.IsPlayerValid(closestPlayer)) return FFASpawningSoldier.minimumSafeDistance; // No players alive on the map.
 
         return mod.DistanceBetween(location, mod.GetSoldierState(closestPlayer, mod.SoldierStateVector.GetPosition));
     }
@@ -885,7 +914,7 @@ class FFASpawningSoldier {
     }
 
     // Should be called in the `OnGameModeStarted()` event. Orientation is the compass angle integer.
-    public static initialize(spawns: FFASpawningSoldier.SpawnData[]): void {
+    public static initialize(spawns: FFASpawningSoldier.SpawnData[], options?: FFASpawningSoldier.InitializeOptions): void {
         mod.EnableHQ(mod.GetHQ(1), false);
         mod.EnableHQ(mod.GetHQ(2), false);
 
@@ -897,7 +926,11 @@ class FFASpawningSoldier {
             };
         });
 
-        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Info, `Set ${FFASpawningSoldier.spawns.length} spawn points.`);
+        this.minimumSafeDistance = options?.minimumSafeDistance ?? this.minimumSafeDistance;
+        this.maximumInterestingDistance = options?.maximumInterestingDistance ?? this.maximumInterestingDistance;
+        this.safeOverInterestingFallbackFactor = options?.safeOverInterestingFallbackFactor ?? this.safeOverInterestingFallbackFactor;
+
+        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Info, `Set ${FFASpawningSoldier.spawns.length} spawn points (MSD: ${this.minimumSafeDistance}m, MID: ${this.maximumInterestingDistance}m, SOIF: ${this.safeOverInterestingFallbackFactor}).`);
     }
 
     // Starts the countdown before prompting the player to spawn or delay again, usually in the `OnPlayerJoinGame()` and `OnPlayerUndeploy()` events.
@@ -1044,10 +1077,7 @@ class FFASpawningSoldier {
     public startDelayForPrompt(): void {
         FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `Starting delay for P-${this.playerId}.`);
 
-        if (mod.GetSoldierState(this.player, mod.SoldierStateBool.IsAISoldier)) {
-            this.addToQueue();
-            return;
-        }
+        if (mod.GetSoldierState(this.player, mod.SoldierStateBool.IsAISoldier)) return this.addToQueue();
 
         this.countdownUI?.show();
         this.promptUI?.hide();
@@ -1118,6 +1148,71 @@ namespace FFASpawningSoldier {
         index: number;
         spawnPoint: mod.SpawnPoint;
         location: mod.Vector;
+    }
+
+    export interface InitializeOptions {
+        minimumSafeDistance?: number;
+        maximumInterestingDistance?: number;
+        safeOverInterestingFallbackFactor?: number;
+    }
+
+}
+
+class MapDetector {
+
+    public static getCurrentMap(): mod.Maps | undefined {
+        const { x, y, z } = MapDetector.getHQCoordinates(0);
+
+        if (x == -1044) return mod.Maps.Granite_MainStreet; // Downtown -1044.5, 122.02, 220.17
+        if (x == -1474) return mod.Maps.Granite_Marina; // Marina -1474.05, 103.09, -690.45
+        if (x == -164) return mod.Maps.Badlands; // Blackwell Fields -164.96, 76.32, -322.58
+        if (x == -195) return mod.Maps.Eastwood; // Eastwood -195.29, 231.54, -41.5
+        if (x == -274) return mod.Maps.Granite_TechCampus; // Defense Nexus -274.12, 138.65, 309.02
+        if (x == -299) return mod.Maps.Granite_ClubHouse; // Golf Course -299.32, 191.91, -644.38
+        if (x == -30) return mod.Maps.Sand; // Portal Sandbox Marina -30.02, 32.4, -0.01
+        if (x == -323) return mod.Maps.Dumbo; // Manhattan Bridge -323.32, 52.3, -440.95
+        if (x == -39) return mod.Maps.Firestorm; // Operation Firestorm -39.67, 124.69, -116.68
+        if (x == -672) return mod.Maps.Aftermath; // Empire State -672.19, 53.79, -115.11
+        if (x == -84) return mod.Maps.Abbasid; // Siege of Cairo -84.27, 64.38, -58.42
+        if (x == -99 && y == 88) return mod.Maps.Tungsten; // Mirak Valley -99.78, 88.62, -253.42
+        if (x == -99 && y == 92) return mod.Maps.Outskirts; // New Sobek City -99.78, 92.4, -124.58
+        if (x == 293) return mod.Maps.Limestone; // Saints Quarter 293.13, 70.35, 134.51
+        if (x == 849) return mod.Maps.Battery; // Iberian Offensive 849.16, 78.37, 116.74
+        if (x == 94) return mod.Maps.Capstone; // Liberation Peak 94.71, 133.43, 77.46
+
+        return;
+    }
+    
+    public static getCurrentMapName(): string | undefined {
+        const map = MapDetector.getCurrentMap();
+        
+        if (map == mod.Maps.Abbasid) return 'Siege of Cairo';
+        if (map == mod.Maps.Aftermath) return 'Empire State';
+        if (map == mod.Maps.Badlands) return 'Blackwell Fields';
+        if (map == mod.Maps.Battery) return 'Iberian Offensive';
+        if (map == mod.Maps.Capstone) return 'Liberation Peak';
+        if (map == mod.Maps.Dumbo) return 'Manhattan Bridge';
+        if (map == mod.Maps.Eastwood) return 'Eastwood';
+        if (map == mod.Maps.Firestorm) return 'Operation Firestorm';
+        if (map == mod.Maps.Granite_ClubHouse) return 'Golf Course';
+        if (map == mod.Maps.Granite_MainStreet) return 'Downtown';
+        if (map == mod.Maps.Granite_Marina) return 'Marina';
+        if (map == mod.Maps.Granite_TechCampus) return 'Defense Nexus';
+        if (map == mod.Maps.Limestone) return 'Saints Quarter';
+        if (map == mod.Maps.Outskirts) return 'New Sobek City';
+        if (map == mod.Maps.Sand) return 'Portal Sandbox Marina';
+        if (map == mod.Maps.Tungsten) return 'Mirak Valley';
+
+        return undefined;
+    }
+
+    public static getHQCoordinates(decimalPlaces: number = 2): { x: number, y: number, z: number } {
+        const scale = 10 ** decimalPlaces;
+        const hqPosition = mod.GetObjectPosition(mod.GetHQ(1));
+        const x = (~~(mod.XComponentOf(hqPosition) * scale)) / scale;
+        const y = (~~(mod.YComponentOf(hqPosition) * scale)) / scale;
+        const z = (~~(mod.ZComponentOf(hqPosition) * scale)) / scale;
+        return { x, y, z };
     }
 
 }
@@ -1274,7 +1369,23 @@ const EASTWOOD_SPAWNS: FFASpawningSoldier.SpawnData[] = [
     {
         location: mod.CreateVector(87.33, 239.70, -135.99),
         orientation: 90,
-    }
+    },
+    {
+        location: mod.CreateVector(96.97, 229.28, 27.41),
+        orientation: 100,
+    },
+    {
+        location: mod.CreateVector(74.03, 229.28, 50.20),
+        orientation: 100,
+    },
+    {
+        location: mod.CreateVector(292.51, 235.34, -79.08),
+        orientation: 255,
+    },
+    {
+        location: mod.CreateVector(95.86, 233.02, -34.06),
+        orientation: 345,
+    },
 ];
 
 const EMPIRE_STATE_SPAWNS: FFASpawningSoldier.SpawnData[] = [
@@ -1645,6 +1756,42 @@ let dynamicLogger: Logger | undefined;
 let performanceStats: PerformanceStats | undefined;
 let debugMenu: UI.Container | undefined;
 
+let playerId: number = 0;
+const playerLogs: { [playerId: number]: string[] } = {};
+
+class PlayerUndeployFixer {
+
+    private static readonly MAX_TIME_TO_UNDEPLOY: number = 30;
+
+    private static lastPlayerDeathTime: {[playerId: number]: number} = {};
+
+    private static lastPlayerUndeployTime: {[playerId: number]: number} = {};
+
+    public static playerDied(player: mod.Player): void {
+        const playerId = mod.GetObjId(player);
+        
+        const thisDeathTime = mod.GetMatchTimeElapsed();
+        
+        this.lastPlayerDeathTime[playerId] = thisDeathTime;
+
+        mod.Wait(this.MAX_TIME_TO_UNDEPLOY).then(() => {
+            const isSameDeathEvent = this.lastPlayerDeathTime[playerId] === thisDeathTime;
+            const hasUndeployed = (this.lastPlayerUndeployTime[playerId] || 0) >= thisDeathTime;
+
+            if (!isSameDeathEvent || hasUndeployed) return;
+
+            dynamicLogger?.log(`<PUF> P-${playerId} stuck in limbo. Force undeploying.`);
+
+            mod.UndeployPlayer(player);
+        });
+    }
+
+    public static playerUndeployed(player: mod.Player): void {
+        // As you noted, this must be the actual time, not MAX_INTEGER
+        this.lastPlayerUndeployTime[mod.GetObjId(player)] = mod.GetMatchTimeElapsed();
+    }
+}
+
 // TODO: Assists
 // TODO: Refresh/clear scoreboard of leavers.
 class BountyHunter {
@@ -1691,18 +1838,20 @@ class BountyHunter {
         1, // 1
         1, // 2
         2, // 3
-        3, // 4
-        4, // 5
-        5, // 6
-        7, // 7
-        10, // 8
+        2, // 4
+        3, // 5
+        4, // 6
+        5, // 7
+        6, // 8
+        7, // 9
+        8, // 10
     ];
 
     private static readonly ZERO_VECTOR: mod.Vector = mod.CreateVector(0, 0, 0);
 
     private static readonly WORLD_ICON_SCALE: mod.Vector = mod.CreateVector(0.5, 0.5, 0.5);
 
-    private static readonly WORLD_ICON_OFFSET: mod.Vector = mod.CreateVector(0, 3.5, 0);
+    private static readonly WORLD_ICON_OFFSET: mod.Vector = mod.CreateVector(0, 3, 0);
 
     private static readonly AWARD_DURATION: number = 2;
 
@@ -1821,7 +1970,7 @@ class BountyHunter {
         ++killer.kills;
         killer.setKillStreak(killer.killStreak + 1);
 
-        dynamicLogger?.log(`<BH> P-${killer.playerId} killed P-${victim ? victim.playerId : 'U'} and got ${bounty} PTS.`);
+        // dynamicLogger?.log(`<BH> P-${killer.playerId} killed P-${victim ? victim.playerId : 'U'} and got ${bounty} PTS.`);
 
         if (killer.deleteIfNotValid()) return;
 
@@ -2021,8 +2170,6 @@ class BountyHunter {
             return BountyHunter.deleteWorldIcon(worldIcon);
         }
 
-        dynamicLogger?.log(`<BH> Flagging P-${this.playerId} every ${delay}s.`);
-
         const position = mod.Add(mod.GetSoldierState(this.player, mod.SoldierStateVector.GetPosition), BountyHunter.WORLD_ICON_OFFSET);
 
         if (worldIcon) {
@@ -2031,7 +2178,12 @@ class BountyHunter {
             worldIcon = BountyHunter.createWorldIcon(position);
         }
 
-        mod.SetWorldIconText(worldIcon, mod.Message(mod.stringkeys.bountyHunter.worldIconText, BountyHunter.getBounty(this.killStreak)));
+        const bounty = BountyHunter.getBounty(this.killStreak);
+
+        mod.SetWorldIconText(worldIcon, mod.Message(mod.stringkeys.bountyHunter.worldIconText, bounty));
+
+        dynamicLogger?.log(`<BH> Flagging P-${this.playerId} every ${delay}s (${bounty} PTS).`);
+
         mod.Wait(delay).then(() => this.flag(worldIcon));
     }
 
@@ -2039,6 +2191,7 @@ class BountyHunter {
         this.points += points;
         this.awardUI.setMessage(BountyHunter.getAwardMessage(points));
         this.awardUI.show();
+        
         mod.Wait(BountyHunter.AWARD_DURATION).then(() => this.awardUI.hide());
     }
 
@@ -2089,7 +2242,6 @@ const DEBUG_MENU = {
                 textColor: UI.COLORS.GREEN,
             },
             onClick: async (player: mod.Player): Promise<void> => {
-                dynamicLogger?.log(`<DEBUG> Clicked toggle static logger button`);
                 staticLogger?.toggle();
             },
         },
@@ -2108,7 +2260,6 @@ const DEBUG_MENU = {
                 textColor: UI.COLORS.GREEN,
             },
             onClick: async (player: mod.Player): Promise<void> => {
-                dynamicLogger?.log(`<DEBUG> Clicked toggle dynamic logger button`);
                 dynamicLogger?.toggle();
             },
         },
@@ -2127,7 +2278,6 @@ const DEBUG_MENU = {
                 textColor: UI.COLORS.GREEN,
             },
             onClick: async (player: mod.Player): Promise<void> => {
-                dynamicLogger?.log(`<DEBUG> Clicked give kill button`);
                 BountyHunter.handleKill(player);
             },
         },
@@ -2146,7 +2296,6 @@ const DEBUG_MENU = {
                 textColor: UI.COLORS.GREEN,
             },
             onClick: async (player: mod.Player): Promise<void> => {
-                dynamicLogger?.log(`<DEBUG> Clicked give assist button`);
                 BountyHunter.handleAssist(player);
             },
         },
@@ -2160,15 +2309,39 @@ const DEBUG_MENU = {
             bgColor: UI.COLORS.GREY_25,
             baseColor: UI.COLORS.BLACK,
             label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.giveBotKill),
+                message: mod.Message(mod.stringkeys.debug.buttons.cyclePlayerLogs),
                 textSize: 20,
                 textColor: UI.COLORS.GREEN,
             },
             onClick: async (player: mod.Player): Promise<void> => {
-                dynamicLogger?.log(`<DEBUG> Clicked give bot kill button`);
-                BountyHunter.handleKill(BountyHunter.getFromPlayerId(1).player);
-                BountyHunter.handleKill(BountyHunter.getFromPlayerId(2).player);
-                BountyHunter.handleKill(BountyHunter.getFromPlayerId(3).player);
+                playerId = (playerId + 1) % 32;
+
+                const logLine = `P-${playerId} last log: ${playerLogs[playerId] && playerLogs[playerId].length > 0 ? playerLogs[playerId][playerLogs[playerId].length - 1] : 'No logs'}`;
+
+                staticLogger?.log(logLine, 4);
+            },
+        },
+        {
+            type: UI.Type.Button,
+            x: 0,
+            y: 100,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            bgColor: UI.COLORS.GREY_25,
+            baseColor: UI.COLORS.BLACK,
+            label: {
+                message: mod.Message(mod.stringkeys.debug.buttons.printPlayerLogs),
+                textSize: 20,
+                textColor: UI.COLORS.GREEN,
+            },
+            onClick: async (player: mod.Player): Promise<void> => {
+                const lastLogIndex = playerLogs[playerId] && playerLogs[playerId].length > 0 ? playerLogs[playerId].length - 1 : -1;
+
+                staticLogger?.log(lastLogIndex >= 3 ? playerLogs[playerId][lastLogIndex - 3] : 'No logs', 6);
+                staticLogger?.log(lastLogIndex >= 2 ? playerLogs[playerId][lastLogIndex - 2] : 'No logs', 7);
+                staticLogger?.log(lastLogIndex >= 1 ? playerLogs[playerId][lastLogIndex - 1] : 'No logs', 8);
+                staticLogger?.log(lastLogIndex >= 0 ? playerLogs[playerId][lastLogIndex] : 'No logs', 9);
             },
         },
         {
@@ -2186,7 +2359,6 @@ const DEBUG_MENU = {
                 textColor: UI.COLORS.GREEN,
             },
             onClick: async (player: mod.Player): Promise<void> => {
-                dynamicLogger?.log(`<DEBUG> Clicked close button`);
                 mod.EnableUIInputMode(false, player);
                 debugMenu?.hide();
             },
@@ -2203,11 +2375,11 @@ export function OngoingGlobal(): void {
 }
 
 export function OnGameModeStarted(): void {
-    // mod.SetGameModeTimeLimit(1200); // 20 minutes
-
     BountyHunter.initialize();
 
-    FFASpawningSoldier.initialize(EMPIRE_STATE_SPAWNS);
+    const map = MapDetector.getCurrentMap();
+
+    FFASpawningSoldier.initialize(map == mod.Maps.Aftermath ? EMPIRE_STATE_SPAWNS : EASTWOOD_SPAWNS);
     FFASpawningSoldier.enableSpawnQueueProcessing();
 }
 
@@ -2224,15 +2396,19 @@ export function OnTimeLimitReached(): void {
 }
 
 export function OnPlayerJoinGame(eventPlayer: mod.Player): void {
+    // playerLogs[mod.GetObjId(eventPlayer)] = [`OnPlayerJoinGame started`];
+
     new BountyHunter(eventPlayer);
     const soldier = new FFASpawningSoldier(eventPlayer);
 
     soldier.startDelayForPrompt();
 
+    // playerLogs[mod.GetObjId(eventPlayer)] = [`OnPlayerJoinGame completed`];
+
     if (mod.GetObjId(eventPlayer) != 0) return;
 
     staticLogger = new Logger(eventPlayer, { staticRows: true, visible: false, anchor: mod.UIAnchor.TopLeft, textColor: UI.COLORS.BF_RED_BRIGHT });
-    dynamicLogger = new Logger(eventPlayer, { staticRows: false, visible: false, anchor: mod.UIAnchor.TopRight, width: 500, height: 700 });
+    dynamicLogger = new Logger(eventPlayer, { staticRows: false, visible: false, anchor: mod.UIAnchor.TopRight, width: 700, height: 800 });
     debugMenu = UI.createContainer(DEBUG_MENU, eventPlayer);
     performanceStats = new PerformanceStats((text: string) => dynamicLogger?.log(text));
     performanceStats?.startPerformanceHeartbeat();
@@ -2242,15 +2418,21 @@ export function OnPlayerJoinGame(eventPlayer: mod.Player): void {
 }
 
 export function OnPlayerDied(victimPlayer: mod.Player, killerPlayer: mod.Player, eventDeathType: mod.DeathType, eventWeaponUnlock: mod.WeaponUnlock): void {
-    BountyHunter.handleKill(killerPlayer, victimPlayer);
-}
+    // playerLogs[mod.GetObjId(victimPlayer)].push(`OnPlayerDied started`);
 
-export function OnPlayerEarnedKillAssist(assisterPlayer: mod.Player, victimPlayer: mod.Player): void {
-    BountyHunter.handleAssist(assisterPlayer, victimPlayer);
+    BountyHunter.handleKill(killerPlayer, victimPlayer);
+    PlayerUndeployFixer.playerDied(victimPlayer);
+
+    // playerLogs[mod.GetObjId(victimPlayer)].push(`OnPlayerDied completed`);
 }
 
 export function OnPlayerUndeploy(eventPlayer: mod.Player): void {
+    // playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerUndeploy started`);
+
+    PlayerUndeployFixer.playerUndeployed(eventPlayer);
     FFASpawningSoldier.startDelayForPrompt(eventPlayer);
+
+    // playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerUndeploy completed`);
 
     if (mod.GetObjId(eventPlayer) != 0) return;
 
@@ -2259,8 +2441,16 @@ export function OnPlayerUndeploy(eventPlayer: mod.Player): void {
     mod.EnableUIInputMode(false, eventPlayer);
 }
 
+export function OnPlayerEarnedKillAssist(assisterPlayer: mod.Player, victimPlayer: mod.Player): void {
+    BountyHunter.handleAssist(assisterPlayer, victimPlayer);
+}
+
 export function OnPlayerDeployed(eventPlayer: mod.Player): void {
+    // playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerDeployed started`);
+
     BountyHunter.handleDeployed(eventPlayer);
+
+    // playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerDeployed completed`);
 
     if (mod.GetObjId(eventPlayer) != 0) return;
 

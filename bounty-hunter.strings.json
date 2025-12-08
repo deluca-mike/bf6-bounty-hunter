@@ -1,6 +1,6 @@
 {
     "ffaAutoSpawningSoldier": {
-        "countdown": "Spawn prompt in {} seconds...",
+        "countdown": "Spawning available in {} seconds...",
         "buttons": {
             "spawn": "Spawn now",
             "delay": "Ask again in {} seconds"
@@ -13,7 +13,7 @@
             "notSpotted": "Not Spotted"
         },
         "scoreboard": {
-            "header": "Bounty Hunters - Target Points: {} - Leader: {}",
+            "header": "Target Points: {} - Leader: {}",
             "none": "None",
             "columns": {
                 "points": "Points",
@@ -136,7 +136,8 @@
             "toggleDynamicLogger": "Toggle Dynamic Logger",
             "giveKill": "Give Kill",
             "giveAssist": "Give Assist",
-            "giveBotKill": "Give Bot Kill",
+            "cyclePlayerLogs": "Cycle Player Logs",
+            "printPlayerLogs": "Print Player Logs",
             "close": "Close"
         }
     }
