@@ -699,6 +699,10 @@ namespace Logger {
 }
 
 class PerformanceStats {
+
+    private stressThreshold: number = 25;
+
+    private deprioritizedThreshold: number = 65;
     
     private sampleRateSeconds: number = 0.5; // 0.5 is ideal as it aligns perfectly with both 30Hz and 60Hz
     
@@ -706,13 +710,15 @@ class PerformanceStats {
 
     private isStarted: boolean = false;
 
-    private cachedTickRate: number = 60; 
+    private cachedTickRate: number = 30; 
     
-    private log: (text: string) => void;
+    private log?: (text: string) => void;
 
-    constructor(log: (text: string) => void, sampleRateSeconds?: number) {
-        this.log = log;
-        this.sampleRateSeconds = sampleRateSeconds ?? 0.5;
+    constructor(options?: PerformanceStats.Options) {
+        this.log = options?.log ?? (() => {});
+        this.sampleRateSeconds = options?.sampleRateSeconds ?? 0.5;
+        this.stressThreshold = options?.stressThreshold ?? 25;
+        this.deprioritizedThreshold = options?.deprioritizedThreshold ?? 65;
     }
 
     public get tickRate(): number {
@@ -720,42 +726,55 @@ class PerformanceStats {
     }
     
     // This should be called once every tick, so it is best to be called in the `OngoingGlobal()` event handler.
-    public trackPerformanceTick(): void {
+    public trackTick(): void {
         this.tickBucket++;
     }
 
-    // This starts the performance heartbeat, which is a loop that tracks the performance of the script. It can be called once, any time.
+    // This starts the performance tracking heartbeat, which is a loop that tracks the performance of the script. It can be called once, any time.
     // If called multiple times, it will only start one loop.
-    public startPerformanceHeartbeat(): void {
+    public startHeartbeat(): void {
         if (this.isStarted) return;
 
         this.isStarted = true;
 
-        mod.Wait(this.sampleRateSeconds).then(() => this.performanceHeartbeat());
+        mod.Wait(this.sampleRateSeconds).then(() => this.heartbeat());
     }
 
-    private performanceHeartbeat(): void {
+    private heartbeat(): void {
         // The raw "Ticks Per Requested Second" (the composite metric).
         this.analyzeHealth(this.cachedTickRate = this.tickBucket / this.sampleRateSeconds);
 
         this.tickBucket = 0;
 
-        mod.Wait(this.sampleRateSeconds).then(() => this.performanceHeartbeat());
+        mod.Wait(this.sampleRateSeconds).then(() => this.heartbeat());
     }
 
     private analyzeHealth(tickRate: number): void {
+        if (!this.log) return;
+
         // We have accumulated too many ticks for the requested time, which means the Wait() took longer than requested.
-        if (tickRate >= 65) {
+        if (tickRate >= this.deprioritizedThreshold) {
             this.log(`<PS> Script Callbacks Deprioritized (Virtual Rate: ${tickRate.toFixed(1)}Hz).`);
             return;
         }
         
         // We didn't even get 30 ticks in the time window, which means the server is under stress.
-        if (tickRate <= 25) {
+        if (tickRate <= this.stressThreshold) {
             this.log(`<PS> Server Stress (Virtual Rate: ${tickRate.toFixed(1)}Hz).`);
             return;
         }
     }
+}
+
+namespace PerformanceStats {
+
+    export type Options = {
+        log?: (text: string) => void;
+        stressThreshold?: number;
+        deprioritizedThreshold?: number;
+        sampleRateSeconds?: number;
+    }
+
 }
 
 class FFASpawningSoldier {
@@ -1162,59 +1181,328 @@ namespace FFASpawningSoldier {
 
 class MapDetector {
 
-    public static getCurrentMap(): mod.Maps | undefined {
+    private static hqCoordinates: mod.Vector;
+
+    // Returns the current map as a `MapDetector.Map` enum value, if possible.
+    public static get currenMap(): MapDetector.Map | undefined {
         const { x, y, z } = MapDetector.getHQCoordinates(0);
 
-        if (x == -1044) return mod.Maps.Granite_MainStreet; // Downtown -1044.5, 122.02, 220.17
-        if (x == -1474) return mod.Maps.Granite_Marina; // Marina -1474.05, 103.09, -690.45
-        if (x == -164) return mod.Maps.Badlands; // Blackwell Fields -164.96, 76.32, -322.58
-        if (x == -195) return mod.Maps.Eastwood; // Eastwood -195.29, 231.54, -41.5
-        if (x == -274) return mod.Maps.Granite_TechCampus; // Defense Nexus -274.12, 138.65, 309.02
-        if (x == -299) return mod.Maps.Granite_ClubHouse; // Golf Course -299.32, 191.91, -644.38
-        if (x == -30) return mod.Maps.Sand; // Portal Sandbox Marina -30.02, 32.4, -0.01
-        if (x == -323) return mod.Maps.Dumbo; // Manhattan Bridge -323.32, 52.3, -440.95
-        if (x == -39) return mod.Maps.Firestorm; // Operation Firestorm -39.67, 124.69, -116.68
-        if (x == -672) return mod.Maps.Aftermath; // Empire State -672.19, 53.79, -115.11
-        if (x == -84) return mod.Maps.Abbasid; // Siege of Cairo -84.27, 64.38, -58.42
-        if (x == -99 && y == 88) return mod.Maps.Tungsten; // Mirak Valley -99.78, 88.62, -253.42
-        if (x == -99 && y == 92) return mod.Maps.Outskirts; // New Sobek City -99.78, 92.4, -124.58
-        if (x == 293) return mod.Maps.Limestone; // Saints Quarter 293.13, 70.35, 134.51
-        if (x == 849) return mod.Maps.Battery; // Iberian Offensive 849.16, 78.37, 116.74
-        if (x == 94) return mod.Maps.Capstone; // Liberation Peak 94.71, 133.43, 77.46
+        if (x == -1044) return MapDetector.Map.Downtown; // Downtown <-1044.5, 122.02, 220.17>
+        if (x == -1474) return MapDetector.Map.Marina; // Marina <-1474.05, 103.09, -690.45>
+        if (x == -164) return MapDetector.Map.BlackwellFields; // Blackwell Fields <-164.96, 76.32, -322.58>
+        if (x == -195) return MapDetector.Map.Eastwood; // Eastwood <-195.29, 231.54, -41.5>
+        if (x == -274) return MapDetector.Map.DefenseNexus; // Defense Nexus <-274.12, 138.65, 309.02>
+        if (x == -299) return MapDetector.Map.GolfCourse; // Golf Course <-299.32, 191.91, -644.38>
+        if (x == -30) return MapDetector.Map.PortalSandboxMarina; // Portal Sandbox Marina <-30.02, 32.4, -0.01>
+        if (x == -323) return MapDetector.Map.ManhattanBridge; // Manhattan Bridge <-323.32, 52.3, -440.95>
+        if (x == -39) return MapDetector.Map.OperationFirestorm; // Operation Firestorm <-39.67, 124.69, -116.68>
+        if (x == -672) return MapDetector.Map.EmpireState; // Empire State <-672.19, 53.79, -115.11>
+        if (x == -84) return MapDetector.Map.SiegeOfCairo; // Siege of Cairo <-84.27, 64.38, -58.42>
+        if (x == -99 && y == 88) return MapDetector.Map.MirakValley; // Mirak Valley <-99.78, 88.62, -253.42>
+        if (x == -99 && y == 92) return MapDetector.Map.NewSobekCity; // New Sobek City <-99.78, 92.4, -124.58>
+        if (x == 293) return MapDetector.Map.SaintsQuarter; // Saints Quarter <293.13, 70.35, 134.51>
+        if (x == 427) return MapDetector.Map.Area22B; // Area 22B <427.68, 177.51, -743.26>
+        if (x == 566) return MapDetector.Map.RedlineStorage; // Redline Storage <566.77, 144.8, 356.16>
+        if (x == 849) return MapDetector.Map.IberianOffensive; // Iberian Offensive <849.16, 78.37, 116.74>
+        if (x == 94) return MapDetector.Map.LiberationPeak; // Liberation Peak <94.71, 133.43, 77.46>
+
+        return;
+    }
+
+    // Returns the current map as a `mod.Maps` enum value, if possible.
+    public static get currentNativeMap(): mod.Maps | undefined {
+        const map = this.currenMap;
+
+        if (map == MapDetector.Map.BlackwellFields) return mod.Maps.Badlands;
+        if (map == MapDetector.Map.DefenseNexus) return mod.Maps.Granite_TechCampus;
+        if (map == MapDetector.Map.Downtown) return mod.Maps.Granite_MainStreet;
+        if (map == MapDetector.Map.Eastwood) return mod.Maps.Eastwood;
+        if (map == MapDetector.Map.EmpireState) return mod.Maps.Aftermath;
+        if (map == MapDetector.Map.GolfCourse) return mod.Maps.Granite_ClubHouse;
+        if (map == MapDetector.Map.IberianOffensive) return mod.Maps.Battery;
+        if (map == MapDetector.Map.LiberationPeak) return mod.Maps.Capstone;
+        if (map == MapDetector.Map.ManhattanBridge) return mod.Maps.Dumbo;
+        if (map == MapDetector.Map.Marina) return mod.Maps.Granite_Marina;
+        if (map == MapDetector.Map.MirakValley) return mod.Maps.Tungsten;
+        if (map == MapDetector.Map.NewSobekCity) return mod.Maps.Outskirts;
+        if (map == MapDetector.Map.OperationFirestorm) return mod.Maps.Firestorm;
+        if (map == MapDetector.Map.PortalSandboxMarina) return mod.Maps.Sand;
+        if (map == MapDetector.Map.SaintsQuarter) return mod.Maps.Limestone;
+        if (map == MapDetector.Map.SiegeOfCairo) return mod.Maps.Abbasid;
+
+        // An oversight in the `mod.Maps` enum has ommitted the following maps:
+        if (map == MapDetector.Map.Area22B) return;
+        if (map == MapDetector.Map.RedlineStorage) return;
 
         return;
     }
     
-    public static getCurrentMapName(): string | undefined {
-        const map = MapDetector.getCurrentMap();
-        
-        if (map == mod.Maps.Abbasid) return 'Siege of Cairo';
-        if (map == mod.Maps.Aftermath) return 'Empire State';
-        if (map == mod.Maps.Badlands) return 'Blackwell Fields';
-        if (map == mod.Maps.Battery) return 'Iberian Offensive';
-        if (map == mod.Maps.Capstone) return 'Liberation Peak';
-        if (map == mod.Maps.Dumbo) return 'Manhattan Bridge';
-        if (map == mod.Maps.Eastwood) return 'Eastwood';
-        if (map == mod.Maps.Firestorm) return 'Operation Firestorm';
-        if (map == mod.Maps.Granite_ClubHouse) return 'Golf Course';
-        if (map == mod.Maps.Granite_MainStreet) return 'Downtown';
-        if (map == mod.Maps.Granite_Marina) return 'Marina';
-        if (map == mod.Maps.Granite_TechCampus) return 'Defense Nexus';
-        if (map == mod.Maps.Limestone) return 'Saints Quarter';
-        if (map == mod.Maps.Outskirts) return 'New Sobek City';
-        if (map == mod.Maps.Sand) return 'Portal Sandbox Marina';
-        if (map == mod.Maps.Tungsten) return 'Mirak Valley';
-
-        return undefined;
+    // Returns the current map as a string, if possible.
+    public static get currentMapName(): string | undefined {
+        return this.currenMap?.toString();
     }
 
+    // Returns true if the current map is the given `MapDetector.Map` enum value.
+    public static isCurrentMap(map: MapDetector.Map): boolean {
+        return this.currenMap == map;
+    }
+
+    // Returns true if the current map is the given `mod.Maps` enum value.
+    public static isCurrentNativeMap(map: mod.Maps): boolean {
+        return this.currentNativeMap == map;
+    }
+
+    // Returns the HQ coordinates of the current map (used for finding the HQ coordinates of the current map).
     public static getHQCoordinates(decimalPlaces: number = 2): { x: number, y: number, z: number } {
+        const hqCoordinates = mod.GetObjectPosition(mod.GetHQ(1));
         const scale = 10 ** decimalPlaces;
-        const hqPosition = mod.GetObjectPosition(mod.GetHQ(1));
-        const x = (~~(mod.XComponentOf(hqPosition) * scale)) / scale;
-        const y = (~~(mod.YComponentOf(hqPosition) * scale)) / scale;
-        const z = (~~(mod.ZComponentOf(hqPosition) * scale)) / scale;
+        const x = (~~(mod.XComponentOf(hqCoordinates) * scale)) / scale;
+        const y = (~~(mod.YComponentOf(hqCoordinates) * scale)) / scale;
+        const z = (~~(mod.ZComponentOf(hqCoordinates) * scale)) / scale;
         return { x, y, z };
+    }
+
+}
+
+namespace MapDetector {
+    
+    export enum Map {
+        Area22B = 'Area 22B',
+        BlackwellFields = 'Blackwell Fields',
+        DefenseNexus = 'Defense Nexus',
+        Downtown = 'Downtown',
+        Eastwood = 'Eastwood',
+        EmpireState = 'Empire State',
+        GolfCourse = 'Golf Course',
+        IberianOffensive = 'Iberian Offensive',
+        LiberationPeak = 'Liberation Peak',
+        ManhattanBridge = 'Manhattan Bridge',
+        Marina = 'Marina',
+        MirakValley = 'Mirak Valley',
+        NewSobekCity = 'New Sobek City',
+        OperationFirestorm = 'Operation Firestorm',
+        PortalSandboxMarina = 'Portal Sandbox Marina',
+        RedlineStorage = 'Redline Storage',
+        SaintsQuarter = 'Saints Quarter',
+        SiegeOfCairo = 'Siege of Cairo',
+    }
+
+}
+
+class Sounds {
+
+    private static readonly DURATION_BUFFER: number = 1;
+
+    private static readonly DEFAULT_2D_DURATION: number = 3;
+
+    private static readonly DEFAULT_3D_DURATION: number = 10;
+
+    // A mapping of arrays of sound objects for each sfx asset that has been requested.
+    // This mechanism ensures efficient sound management by reusing sound objects and avoiding unnecessary spawns.
+    private static readonly SOUND_OBJECT_POOL: Map<mod.RuntimeSpawn_Common, Sounds.SoundObject[]> = new Map();
+
+    private static logger?: (text: string) => void;
+
+    private static logLevel: Sounds.LogLevel = 2;
+
+    private static soundObjectsCount: number = 0;
+
+    private static log(logLevel: Sounds.LogLevel, text: string): void {
+        if (logLevel < Sounds.logLevel) return;
+
+        Sounds.logger?.(`<Sounds> ${text}`);
+    }
+    
+    private static getVectorString(vector: mod.Vector): string {
+        return `<${mod.XComponentOf(vector).toFixed(2)}, ${mod.YComponentOf(vector).toFixed(2)}, ${mod.ZComponentOf(vector).toFixed(2)}>`;
+    }
+
+    // Returns the array of `SoundObject` for the given sfx asset, and initializes the array if it doesn't exist.
+    private static getSoundObjects(sfxAsset: mod.RuntimeSpawn_Common): Sounds.SoundObject[] {
+        const soundObjects = this.SOUND_OBJECT_POOL.get(sfxAsset);
+
+        if (soundObjects) return soundObjects;
+
+        this.SOUND_OBJECT_POOL.set(sfxAsset, []);
+
+        this.log(Sounds.LogLevel.Debug, `SoundObjects for new SFX asset initialized.`);
+
+        return this.SOUND_OBJECT_POOL.get(sfxAsset)!;
+    }
+
+    private static createSoundObject(soundObjects: Sounds.SoundObject[], sfxAsset: mod.RuntimeSpawn_Common): Sounds.SoundObject {
+        const newSoundObject = {
+            sfx: mod.SpawnObject(sfxAsset, mod.CreateVector(0, 0, 0), mod.CreateVector(0, 0, 0)),
+            availableTime: 0,
+        }
+
+        this.soundObjectsCount++;
+
+        soundObjects.push(newSoundObject);
+
+        this.log(Sounds.LogLevel.Debug, `New SoundObject created. SFX ssset now has ${soundObjects.length} SoundObjects.`);
+
+        return newSoundObject;
+    }
+
+    // Returns the first available `SoundObject` for the given sfx asset, and creates a new `SoundObject` if none is available.
+    private static getAvailableSoundObject(sfxAsset: mod.RuntimeSpawn_Common, curentTime: number = mod.GetMatchTimeElapsed()): Sounds.SoundObject {
+        const soundObjects = this.getSoundObjects(sfxAsset);
+
+        const soundObject = soundObjects.find((soundObject) => curentTime >= soundObject.availableTime);
+
+        if (soundObject) {
+            this.log(Sounds.LogLevel.Debug, `Available SoundObject found (in array of ${soundObjects.length} SoundObjects).`);
+            return soundObject;
+        }
+
+        return this.createSoundObject(soundObjects, sfxAsset);
+    }
+
+    // Creates a `PlayedSound` with that will automatically stop the underlying sound after the specified duration, and that can be stopped manually.
+    private static createPlayedSound(soundObject: Sounds.SoundObject, currentTime: number, duration: number): Sounds.PlayedSound {
+        const availableTime = duration == 0 ? Number.MAX_SAFE_INTEGER : soundObject.availableTime = currentTime + duration + this.DURATION_BUFFER;
+
+        const stop = () => {
+            soundObject.availableTime = 0;
+            mod.StopSound(soundObject.sfx);
+        };
+
+        if (duration > 0) {
+            mod.Wait(duration).then(() => {
+                this.log(Sounds.LogLevel.Debug, `Sound stopped automatically after ${duration} seconds.`);
+                stop();
+            });
+        }
+
+        return {
+            stop: () => {
+                if (mod.GetMatchTimeElapsed() > availableTime) {
+                    this.log(Sounds.LogLevel.Error, `Sound already stopped.`);
+                    return;
+                }
+
+                this.log(Sounds.LogLevel.Debug, `Sound stopped manually.`);
+
+                stop();
+            },
+        };
+    }
+
+    private static play2DSound(sfxAsset: mod.RuntimeSpawn_Common, currentTime: number, duration: number, amplitude: number): Sounds.PlayedSound {
+        const soundObject = this.getAvailableSoundObject(sfxAsset, currentTime);
+        mod.PlaySound(soundObject.sfx, amplitude);
+        this.log(Sounds.LogLevel.Info, `2D sound played for all players (amplitude ${amplitude.toFixed(2)}, duration ${duration.toFixed(2)}s).`);
+        return this.createPlayedSound(soundObject, currentTime, duration);
+    }
+
+    private static play2DSoundForPlayer(sfxAsset: mod.RuntimeSpawn_Common, currentTime: number, duration: number, amplitude: number, player: mod.Player): Sounds.PlayedSound {
+        const soundObject = this.getAvailableSoundObject(sfxAsset, currentTime);
+        mod.PlaySound(soundObject.sfx, amplitude, player);
+        this.log(Sounds.LogLevel.Info, `2D sound played for player ${mod.GetObjId(player)} (amplitude ${amplitude.toFixed(2)}, duration ${duration.toFixed(2)}s).`);
+        return this.createPlayedSound(soundObject, currentTime, duration);
+    }
+
+    private static play2DSoundForSquad(sfxAsset: mod.RuntimeSpawn_Common, currentTime: number, duration: number, amplitude: number, squad: mod.Squad): Sounds.PlayedSound {
+        const soundObject = this.getAvailableSoundObject(sfxAsset, currentTime);
+        mod.PlaySound(soundObject.sfx, amplitude, squad);
+        this.log(Sounds.LogLevel.Info, `2D sound played for squad (amplitude ${amplitude.toFixed(2)}, duration ${duration.toFixed(2)}s).`); // TODO: Get Squad ID if and when API is fixed.
+        return this.createPlayedSound(soundObject, currentTime, duration);
+    }
+
+    private static play2DSoundForTeam(sfxAsset: mod.RuntimeSpawn_Common, currentTime: number, duration: number, amplitude: number, team: mod.Team): Sounds.PlayedSound {
+        const soundObject = this.getAvailableSoundObject(sfxAsset, currentTime);
+        mod.PlaySound(soundObject.sfx, amplitude, team);
+        this.log(Sounds.LogLevel.Info, `2D sound played for player ${mod.GetObjId(team)} (amplitude ${amplitude.toFixed(2)}, duration ${duration.toFixed(2)}s).`);
+        return this.createPlayedSound(soundObject, currentTime, duration);
+    }
+
+    public static play2D(sfxAsset: mod.RuntimeSpawn_Common, params: Sounds.Params2D = {}): Sounds.PlayedSound {
+        const duration = params.duration ?? this.DEFAULT_2D_DURATION;
+        const currentTime = mod.GetMatchTimeElapsed();
+        const amplitude = params.amplitude ?? 1;
+
+        if (params.player) return this.play2DSoundForPlayer(sfxAsset, currentTime, duration, amplitude, params.player);
+
+        if (params.squad) return this.play2DSoundForSquad(sfxAsset, currentTime, duration, amplitude, params.squad);
+
+        if (params.team) return this.play2DSoundForTeam(sfxAsset, currentTime, duration, amplitude, params.team);
+
+        return this.play2DSound(sfxAsset, currentTime, duration, amplitude);
+    }
+
+    public static play3D(sfxAsset: mod.RuntimeSpawn_Common, position: mod.Vector, params: Sounds.Params3D = {}): Sounds.PlayedSound {
+        const currentTime = mod.GetMatchTimeElapsed();
+        const soundObject = this.getAvailableSoundObject(sfxAsset, currentTime);
+        const amplitude = params.amplitude ?? 1;
+        const attenuationRange = params.attenuationRange ?? 10;
+        const duration = params.duration ?? this.DEFAULT_3D_DURATION;
+
+        mod.PlaySound(soundObject.sfx, amplitude, position, attenuationRange);
+
+        this.log(Sounds.LogLevel.Info, `3D sound played at position ${this.getVectorString(position)} (amplitude ${amplitude.toFixed(2)}, att. range ${attenuationRange.toFixed(2)}m, duration ${duration.toFixed(2)}s).`); // TODO: Get Squad ID if and when API is fixed.
+
+        return this.createPlayedSound(soundObject, currentTime, duration);
+    }
+
+    // Attaches a logger and defines a minimum log level.
+    public static setLogging(log?: (text: string) => void, logLevel?: Sounds.LogLevel): void {
+        Sounds.logger = log;
+        Sounds.logLevel = logLevel ?? Sounds.LogLevel.Info;
+    }
+
+    // Creates a new `SoundObject` for the given sfx asset if it doesn't exist.
+    // This helps the game client load the sound asset in memory to it can play quicker when needed.
+    // This is onyl needed once per asset, if at all.
+    public static preload(sfxAsset: mod.RuntimeSpawn_Common): void {
+        const soundObjects = this.getSoundObjects(sfxAsset);
+
+        if (soundObjects.length) return;
+
+        this.createSoundObject(soundObjects, sfxAsset);
+    }
+
+    // Returns the total number of `SoundObject`s created.
+    public static get objectCount(): number {
+        return this.soundObjectsCount;
+    }
+
+    // Returns the number of `SoundObject`s created for the given sfx asset.
+    public static objectCountForAsset(sfxAsset: mod.RuntimeSpawn_Common): number {
+        return this.getSoundObjects(sfxAsset).length;
+    }
+
+}
+
+namespace Sounds {
+
+    export type SoundObject = {
+        sfx: mod.SFX,
+        availableTime: number,
+    }
+
+    export type PlayedSound = {
+        stop: () => void,
+    }
+    
+    export type Params2D = {
+        amplitude?: number,
+        player?: mod.Player,
+        squad?: mod.Squad,
+        team?: mod.Team,
+        duration?: number, // 0 for infinite duration (i.e. for looping assets)
+    }
+
+    export type Params3D = {
+        amplitude?: number,
+        attenuationRange?: number,
+        duration?: number, // 0 for infinite duration (i.e. for looping assets)
+    }
+
+    export enum LogLevel {
+        Debug = 0,
+        Info = 1,
+        Error = 2,
     }
 
 }
@@ -1389,6 +1677,12 @@ const EASTWOOD_SPAWNS: FFASpawningSoldier.SpawnData[] = [
         orientation: 345,
     },
 ];
+
+const EASTWOOD_FFA_SPAWNING_SOLDIER_OPTIONS: FFASpawningSoldier.InitializeOptions = {
+    minimumSafeDistance: 40,
+    maximumInterestingDistance: 60,
+    safeOverInterestingFallbackFactor: 1.5,
+};
 
 const EMPIRE_STATE_SPAWNS: FFASpawningSoldier.SpawnData[] = [
     {
@@ -1753,6 +2047,12 @@ const EMPIRE_STATE_SPAWNS: FFASpawningSoldier.SpawnData[] = [
     },
 ];
 
+const EMPIRE_STATE_FFA_SPAWNING_SOLDIER_OPTIONS: FFASpawningSoldier.InitializeOptions = {
+    minimumSafeDistance: 20,
+    maximumInterestingDistance: 40,
+    safeOverInterestingFallbackFactor: 1.5,
+};
+
 let staticLogger: Logger | undefined;
 let dynamicLogger: Logger | undefined;
 let performanceStats: PerformanceStats | undefined;
@@ -1849,6 +2149,19 @@ class BountyHunter {
         8, // 10
     ];
 
+    private static readonly AWARD_SOUNDS: ({ sfxAsset: mod.RuntimeSpawn_Common, amplitude: number } | undefined)[] = [
+        { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_EOR_MasteryRankUp_OneShot2D, amplitude: 3 }, // 0
+        { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_EOR_MasteryRankUp_OneShot2D, amplitude: 3 }, // 1
+        { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_EOR_MasteryRankUp_OneShot2D, amplitude: 3 }, // 2
+        { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_EOR_MasteryRankUp_OneShot2D, amplitude: 3 }, // 3
+        { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_EOR_MasteryRankUp_OneShot2D, amplitude: 3 }, // 4
+        { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_Notification_SectorBonus_ProgressBarFinished_OneShot2D, amplitude: 1 }, // 5
+        { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_Notification_SectorBonus_ProgressBarFinished_OneShot2D, amplitude: 1 }, // 6
+        { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_Scorelog_Accolades_AccoladeTypes_CareerBest_OneShot2D, amplitude: 1 }, // 7
+        { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_Scorelog_Accolades_AccoladeTypes_CareerBest_OneShot2D, amplitude: 1 }, // 8
+        { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_Notification_SidePanel_Mastery_OneShot2D, amplitude: 2 }, // 9
+    ];
+
     private static readonly ZERO_VECTOR: mod.Vector = mod.CreateVector(0, 0, 0);
 
     private static readonly WORLD_ICON_SCALE: mod.Vector = mod.CreateVector(0.5, 0.5, 0.5);
@@ -1900,6 +2213,11 @@ class BountyHunter {
         return mod.Message(mod.stringkeys.bountyHunter.award, points);
     }
 
+    private static getAwardSound(killStreak: number): { sfxAsset: mod.RuntimeSpawn_Common, amplitude: number } | undefined {
+        const sounds = BountyHunter.AWARD_SOUNDS;
+        return killStreak < sounds.length ? sounds[killStreak] : sounds[sounds.length - 1];
+    }
+
     // ---- Public Static Methods ---- //
 
     public static initialize(): void {
@@ -1948,8 +2266,7 @@ class BountyHunter {
         const killer = BountyHunter.getFromPlayer(killerPlayer);
         const victim = victimPlayer && BountyHunter.getFromPlayer(victimPlayer);
         const victimIsValid = victim && !victim.deleteIfNotValid();
-
-        const bounty = BountyHunter.getBounty(victim?.killStreak ?? 0); // This needs to be retreived before the victim's kill streak is reset.
+        const victimKillStreak = victim?.killStreak ?? 0; // This needs to be captured before the victim's kill streak is reset.
 
         if (victimIsValid) {
             victim.killBeforeDeath = victim.killStreak;
@@ -1968,13 +2285,13 @@ class BountyHunter {
 
         if (killer.playerId == victim?.playerId) return;
 
-        killer.awardPoints(bounty);
-        ++killer.kills;
-        killer.setKillStreak(killer.killStreak + 1);
-
-        // dynamicLogger?.log(`<BH> P_${killer.playerId} killed P_${victim ? victim.playerId : 'U'} and got ${bounty} PTS.`);
+        dynamicLogger?.log(`<BH> P_${killer ? killer.playerId : 'U'} ended P_${victim ? victim.playerId : 'U'}'s ${victimKillStreak} kill streak.`);
 
         if (killer.deleteIfNotValid()) return;
+
+        killer.awardBounty(victimKillStreak);
+        ++killer.kills;
+        killer.setKillStreak(killer.killStreak + 1);
 
         mod.SetGameModeScore(killerPlayer, killer.points);
 
@@ -2010,12 +2327,12 @@ class BountyHunter {
 
         const bounty = ~~(BountyHunter.getBounty(killStreak || killStreakBeforeDeath) / 2);
 
-        assister.points += bounty;
-        ++assister.assists;
-
-        dynamicLogger?.log(`P_${assister.playerId} assisted in killing P_${victim ? victim.playerId : 'U'} and got ${bounty} PTS.`);
+        dynamicLogger?.log(`P_${assister ? assister.playerId : 'U'} assisted in killing P_${victim ? victim.playerId : 'U'} and got ${bounty} PTS.`);
 
         if (assister.deleteIfNotValid()) return;
+
+        assister.points += bounty;
+        ++assister.assists;
 
         mod.SetGameModeScore(assisterPlayer, assister.points);
 
@@ -2189,7 +2506,15 @@ class BountyHunter {
         mod.Wait(delay).then(() => this.flag(worldIcon));
     }
 
-    private awardPoints(points: number): void {
+    private awardBounty(victimKillStreak: number): void {
+        const sound = BountyHunter.getAwardSound(victimKillStreak);
+
+        if (sound) {
+            Sounds.play2D(sound.sfxAsset, { duration: 5, player: this.player, amplitude: sound.amplitude });
+        }
+
+        const points = BountyHunter.getBounty(victimKillStreak);
+
         this.points += points;
         this.awardUI.setMessage(BountyHunter.getAwardMessage(points));
         this.awardUI.show();
@@ -2223,7 +2548,7 @@ const DEBUG_MENU = {
     x: 0,
     y: 0,
     width: 300,
-    height: 200,
+    height: 300,
     anchor: mod.UIAnchor.Center,
     bgColor: UI.COLORS.BLACK,
     bgAlpha: 0.5,
@@ -2376,15 +2701,18 @@ export function OnPlayerUIButtonEvent(player: mod.Player, widget: mod.UIWidget, 
 }
 
 export function OngoingGlobal(): void {
-    performanceStats?.trackPerformanceTick();
+    performanceStats?.trackTick();
 }
 
 export function OnGameModeStarted(): void {
     BountyHunter.initialize();
 
-    const map = MapDetector.getCurrentMap();
+    const { spawnData, spawnOptions } =
+        MapDetector.currenMap == MapDetector.Map.EmpireState
+            ? { spawnData: EMPIRE_STATE_SPAWNS, spawnOptions: EMPIRE_STATE_FFA_SPAWNING_SOLDIER_OPTIONS }
+            : { spawnData: EASTWOOD_SPAWNS, spawnOptions: EASTWOOD_FFA_SPAWNING_SOLDIER_OPTIONS };
 
-    FFASpawningSoldier.initialize(map == mod.Maps.Aftermath ? EMPIRE_STATE_SPAWNS : EASTWOOD_SPAWNS);
+    FFASpawningSoldier.initialize(spawnData, spawnOptions);
     FFASpawningSoldier.enableSpawnQueueProcessing();
 }
 
@@ -2415,8 +2743,8 @@ export function OnPlayerJoinGame(eventPlayer: mod.Player): void {
     staticLogger = new Logger(eventPlayer, { staticRows: true, visible: false, anchor: mod.UIAnchor.TopLeft, textColor: UI.COLORS.BF_RED_BRIGHT });
     dynamicLogger = new Logger(eventPlayer, { staticRows: false, visible: false, anchor: mod.UIAnchor.TopRight, width: 700, height: 800 });
     debugMenu = UI.createContainer(DEBUG_MENU, eventPlayer);
-    performanceStats = new PerformanceStats((text: string) => dynamicLogger?.log(text));
-    performanceStats?.startPerformanceHeartbeat();
+    performanceStats = new PerformanceStats({ log: (text: string) => dynamicLogger?.log(text) });
+    performanceStats?.startHeartbeat();
     
     const logger = (text: string) => dynamicLogger?.log(text);
     FFASpawningSoldier.setLogging(logger, FFASpawningSoldier.LogLevel.Info);
