@@ -72,9 +72,9 @@ class UI {
             parent.uiWidget(),
             params.visible ?? true,
             params.padding ?? 0,
-            params.bgColor ?? UI.COLORS.BF_GREY_4,
-            params.bgAlpha ?? 1,
-            params.bgFill ?? mod.UIBgFill.Solid,
+            params.bgColor ?? UI.COLORS.WHITE,
+            params.bgAlpha ?? 0,
+            params.bgFill ?? mod.UIBgFill.None,
             params.depth ?? mod.UIDepth.AboveGameUI,
         ];
     
@@ -278,7 +278,7 @@ class UI {
         };
     }
 
-    public static async handleButtonClick(player: mod.Player, widget: mod.UIWidget, event: mod.UIButtonEvent): Promise<void> {
+    public static handleButtonClick(player: mod.Player, widget: mod.UIWidget, event: mod.UIButtonEvent): void {
         // NOTE: mod.UIButtonEvent is currently broken or undefined, so we're not using it for now.
         // if (event != mod.UIButtonEvent.ButtonUp) return;
 
@@ -286,7 +286,9 @@ class UI {
 
         if (!clickHandler) return;
 
-        await clickHandler(player);
+        clickHandler(player).catch((error) => {
+            console.error(`Error in click handler for widget ${mod.GetUIWidgetName(widget)}:`, error);
+        });
     }
 
     public static parseNode(node?: UI.Node | mod.UIWidget): UI.Node {
@@ -1001,7 +1003,10 @@ class FFASpawningSoldier {
 
         FFASpawningSoldier.allSoldiers[this.playerId] = this;
 
-        if (mod.GetSoldierState(player, mod.SoldierStateBool.IsAISoldier)) return;
+        if (mod.GetSoldierState(player, mod.SoldierStateBool.IsAISoldier)) {
+            FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `P_${this.playerId} is an AI soldier, skipping initialization.`);
+            return;
+        }
 
         this.promptUI = UI.createContainer({
             x: 0,
@@ -1098,7 +1103,10 @@ class FFASpawningSoldier {
     public startDelayForPrompt(): void {
         FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `Starting delay for P_${this.playerId}.`);
 
-        if (mod.GetSoldierState(this.player, mod.SoldierStateBool.IsAISoldier)) return this.addToQueue();
+        if (mod.GetSoldierState(this.player, mod.SoldierStateBool.IsAISoldier)) {
+            FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `P_${this.playerId} is an AI soldier, skipping delay.`);
+            return this.addToQueue();
+        }
 
         this.countdownUI?.show();
         this.promptUI?.hide();
@@ -1507,6 +1515,58 @@ namespace Sounds {
 
 }
 
+class InteractMultiClickDetector {
+
+    private static readonly STATES: Record<number, { lastIsInteracting: boolean, clickCount: number, sequenceStartTime: number }> = {};
+
+    private static readonly WINDOW_MS = 1_000;
+
+    private static readonly REQUIRED_CLICKS = 3;
+
+    public static checkMultiClick(player: mod.Player): boolean {
+        const playerId = mod.GetObjId(player);
+        const isInteracting = mod.GetSoldierState(player, mod.SoldierStateBool.IsInteracting);
+
+        let state = this.STATES[playerId];
+
+        // If player's state is undefined, create it.
+        if (!state) {
+            this.STATES[playerId] = state = {
+                lastIsInteracting: isInteracting,
+                clickCount: 0,
+                sequenceStartTime: 0
+            };
+        }
+
+        if (isInteracting === state.lastIsInteracting) return false; // Fast exit for the vast majority of ticks.
+
+        state.lastIsInteracting = isInteracting;
+
+        if (!isInteracting) return false; // Return false on a falling edge.
+
+        const now = Date.now();
+
+        // If the time window has passed, reset the sequence.
+        if (state.clickCount > 0 && (now - state.sequenceStartTime > this.WINDOW_MS)) {
+            state.clickCount = 0;
+        }
+
+        if (state.clickCount === 0) {
+            state.sequenceStartTime = now;
+            state.clickCount = 1;
+
+            return false;
+        }
+
+        if (++state.clickCount !== this.REQUIRED_CLICKS) return false;
+
+        state.clickCount = 0; // Reset for next unique sequence.
+
+        return true;
+    }
+
+}
+
 const EASTWOOD_SPAWNS: FFASpawningSoldier.SpawnData[] = [
     {
         location: mod.CreateVector(-296.85, 235.07, -68.62),
@@ -1680,7 +1740,7 @@ const EASTWOOD_SPAWNS: FFASpawningSoldier.SpawnData[] = [
 
 const EASTWOOD_FFA_SPAWNING_SOLDIER_OPTIONS: FFASpawningSoldier.InitializeOptions = {
     minimumSafeDistance: 40,
-    maximumInterestingDistance: 60,
+    maximumInterestingDistance: 80,
     safeOverInterestingFallbackFactor: 1.5,
 };
 
@@ -2104,6 +2164,10 @@ class BountyHunter {
 
     private static readonly BASE_KILL_POINTS: number = 10;
 
+    private static readonly BIG_BOUNTY_THRESHOLD: number = 30;
+
+    private static readonly MAX_BIG_BOUNTIES: number = 3;
+
     private static readonly SPOTTING_DURTATIONS: number[] = [
         0, // 0
         0, // 1
@@ -2111,7 +2175,9 @@ class BountyHunter {
         0, // 3
         5, // 4
         10, // 5
-        20, // 6
+        15, // 6
+        20, // 7
+        29, // 8
     ];
 
     private static readonly STREAK_SPOTTING_DELAYS: number[] = [
@@ -2119,9 +2185,11 @@ class BountyHunter {
         0, // 1
         0, // 2
         0, // 3
-        16, // 4
-        11, // 5
-        1, // 6
+        25, // 4
+        20, // 5
+        15, // 6
+        10, // 7
+        1, // 8
     ];
 
     private static readonly STREAK_FLAGGING_DELAYS: number[] = [
@@ -2130,9 +2198,10 @@ class BountyHunter {
         0, // 2
         0, // 3
         0, // 4
-        8, // 5
-        4, // 6
-        2, // 7
+        16, // 5
+        8, // 6
+        4, // 7
+        2, // 8
     ];
 
     private static readonly BOUNTY_MULTIPLIERS: number[] = [
@@ -2170,9 +2239,21 @@ class BountyHunter {
 
     private static readonly AWARD_DURATION: number = 2;
 
-    // ---- Private Static Variables ---- //
+    private static readonly ALL_BOUNTY_HUNTERS: { [playerId: number]: BountyHunter } = {};
 
-    private static allBountyHunters: { [playerId: number]: BountyHunter } = {};
+    private static readonly BIG_BOUNTIES: Map<number, { bounty: number, position: mod.Vector }> = new Map();
+
+    private static readonly SELF_INFO_CONTAINER_PARAMS: UI.ContainerParams = {
+        x: 0,
+        y: 0,
+        width: 450,
+        height: 120,
+        anchor: mod.UIAnchor.TopCenter,
+        bgColor: UI.COLORS.BF_GREY_4,
+        bgAlpha: 0.75,
+        bgFill: mod.UIBgFill.Blur,
+        depth: mod.UIDepth.BelowGameUI
+    };
 
     // ---- Private Static Methods ---- //
 
@@ -2210,12 +2291,166 @@ class BountyHunter {
     }
 
     private static getAwardMessage(points: number): mod.Message {
-        return mod.Message(mod.stringkeys.bountyHunter.award, points);
+        return mod.Message(mod.stringkeys.bountyHunter.hud.award, points);
     }
 
     private static getAwardSound(killStreak: number): { sfxAsset: mod.RuntimeSpawn_Common, amplitude: number } | undefined {
         const sounds = BountyHunter.AWARD_SOUNDS;
         return killStreak < sounds.length ? sounds[killStreak] : sounds[sounds.length - 1];
+    }
+
+    private static createWorldIcon(position: mod.Vector): mod.WorldIcon {
+        const worldIcon = mod.SpawnObject(mod.RuntimeSpawn_Common.WorldIcon, position, BountyHunter.ZERO_VECTOR, BountyHunter.WORLD_ICON_SCALE);
+        mod.SetWorldIconColor(worldIcon, UI.COLORS.BF_RED_BRIGHT); // TODO: Use color based on kill streak?
+        mod.SetWorldIconImage(worldIcon, mod.WorldIconImages.Triangle);
+        mod.EnableWorldIconImage(worldIcon, true);
+        mod.EnableWorldIconText(worldIcon, true);
+
+        return worldIcon;
+    }
+
+    private static deleteWorldIcon(worldIcon?: mod.WorldIcon): void {
+        if (!worldIcon) return;
+    
+        mod.UnspawnObject(worldIcon);
+    }
+
+    private static updateBigBounties(player: mod.Player, bounty: number, position: mod.Vector): void {
+        this.BIG_BOUNTIES.set(mod.GetObjId(player), { bounty, position });
+
+        const bigBounties =
+            Array
+                .from(BountyHunter.BIG_BOUNTIES.entries())
+                .filter(([_, { bounty }]) => bounty >= BountyHunter.BIG_BOUNTY_THRESHOLD)
+                .sort((a, b) => a[1].bounty - b[1].bounty) // Ascending sort.
+                .slice(0, BountyHunter.MAX_BIG_BOUNTIES)
+                .map(([playerId, { bounty, position }]) => ({ bountyHunter: BountyHunter.getFromPlayerId(playerId), bounty, position }));
+
+        Object.values(BountyHunter.ALL_BOUNTY_HUNTERS).forEach((bountyHunter) => {
+            bountyHunter.updateBigBountiesUI(bigBounties);
+        });
+    }
+
+    private static getKillStreakUIParams(parent: UI.Container): UI.TextParams {
+        return {
+            x: 0,
+            y: 60,
+            width: 400,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            message: BountyHunter.getKillStreakMessage(0),
+            textSize: 20,
+            textColor: UI.COLORS.BF_GREEN_BRIGHT,
+            parent,
+        };
+    }
+
+    private static getSpottedUIParams(parent: UI.Container): UI.TextParams {
+        return {
+            x: 0,
+            y: 90,
+            width: 400,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            message: BountyHunter.getSpottedMessage(0),
+            textSize: 20,
+            textColor: UI.COLORS.BF_GREEN_BRIGHT,
+            parent,
+        };
+    }
+
+    private static getAwardUIParams(): UI.TextParams {
+        return {
+            x: 0,
+            y: -100,
+            width: 100,
+            height: 32,
+            anchor: mod.UIAnchor.Center,
+            message: BountyHunter.getAwardMessage(0),
+            bgColor: UI.COLORS.BF_GREY_4,
+            bgAlpha: 0.5,
+            bgFill: mod.UIBgFill.Blur,
+            textSize: 24,
+            textColor: UI.COLORS.BF_GREEN_BRIGHT,
+            textAlpha: 0.5,
+            visible: false,
+        };
+    }
+
+    private static getBigBountyTextUIParams(x: number, width: number, anchor: mod.UIAnchor, message: mod.Message, textColor: mod.Vector): UI.TextParams {
+        return {
+            type: UI.Type.Text,
+            x,
+            width,
+            height: 20,
+            anchor,
+            message: message,
+            textSize: 14,
+            textColor,
+            textAnchor: anchor,
+        };
+    }
+
+    private static getBigBountyRowUIParams(y: number): UI.ContainerParams {
+        const childrenParams: UI.TextParams[] = [
+            this.getBigBountyTextUIParams(3, 90, mod.UIAnchor.CenterLeft, mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.points, 0), UI.COLORS.BF_GREEN_BRIGHT),
+            this.getBigBountyTextUIParams(88, 60, mod.UIAnchor.CenterLeft, mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.unknownHeading), UI.COLORS.WHITE),
+            this.getBigBountyTextUIParams(3, 200, mod.UIAnchor.CenterRight, mod.Message(0), UI.COLORS.BF_RED_BRIGHT),
+        ];
+
+        return {
+            type: UI.Type.Container,
+            y: y,
+            width: 294,
+            height: 24,
+            anchor: mod.UIAnchor.BottomLeft,
+            bgColor: UI.COLORS.BF_GREY_4,
+            bgAlpha: 0.70,
+            bgFill: mod.UIBgFill.Blur,
+            visible: false,
+            childrenParams: childrenParams,
+        };
+    }
+
+    private static getBigBountyUIParams(): UI.ContainerParams {
+        const childrenParams: UI.ContainerParams[] = Array(BountyHunter.MAX_BIG_BOUNTIES).fill({}).map((_, index) => this.getBigBountyRowUIParams(index * (20 + 4)));
+
+        return {
+            x: 32,
+            y: 340,
+            width: 296,
+            height: BountyHunter.MAX_BIG_BOUNTIES * 24,
+            anchor: mod.UIAnchor.BottomLeft,
+            depth: mod.UIDepth.AboveGameUI,
+            childrenParams: childrenParams,
+            visible: false,
+        };
+    }
+
+    private static getHeading(start: mod.Vector, target: mod.Vector): number {
+        const dx = mod.XComponentOf(target) - mod.XComponentOf(start);
+        const dz = mod.ZComponentOf(target) - mod.ZComponentOf(start);
+        const angleRadians = Math.atan2(dx, -dz);
+        const angleDegrees = angleRadians * (180 / Math.PI);
+
+        return angleDegrees < 0 ? angleDegrees + 360 : angleDegrees;
+    }
+
+    private static getDistanceMessage(bountyPosition: mod.Vector, position?: mod.Vector): mod.Message {
+        if (!position) return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.unknownHeading);
+
+        const heading = this.getHeading(position, bountyPosition);
+        const distance = ~~mod.DistanceBetween(position, bountyPosition);
+
+        if (heading < 22.5) return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.headingN, distance);
+        if (heading < 67.5) return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.headingNE, distance);
+        if (heading < 112.5) return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.headingE, distance);
+        if (heading < 157.5) return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.headingSE, distance);
+        if (heading < 202.5) return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.headingS, distance);
+        if (heading < 247.5) return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.headingSW, distance);
+        if (heading < 292.5) return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.headingW, distance);
+        if (heading < 337.5) return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.headingNW, distance);
+        return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.headingN, distance);
     }
 
     // ---- Public Static Methods ---- //
@@ -2249,17 +2484,17 @@ class BountyHunter {
     }
 
     public static getLeader(): BountyHunter | undefined {
-        return Object.values(BountyHunter.allBountyHunters).reduce((leader: BountyHunter | undefined, bountyHunter: BountyHunter) => {
+        return Object.values(BountyHunter.ALL_BOUNTY_HUNTERS).reduce((leader: BountyHunter | undefined, bountyHunter: BountyHunter) => {
             return leader && leader.points > bountyHunter.points ? leader : bountyHunter;
         }, undefined);
     }
     
     public static getFromPlayer(player: mod.Player): BountyHunter {
-        return BountyHunter.allBountyHunters[mod.GetObjId(player)];
+        return BountyHunter.ALL_BOUNTY_HUNTERS[mod.GetObjId(player)];
     }
     
     public static getFromPlayerId(playerId: number): BountyHunter {
-        return BountyHunter.allBountyHunters[playerId];
+        return BountyHunter.ALL_BOUNTY_HUNTERS[playerId];
     }
 
     public static handleKill(killerPlayer: mod.Player, victimPlayer?: mod.Player): void {
@@ -2267,11 +2502,17 @@ class BountyHunter {
         const victim = victimPlayer && BountyHunter.getFromPlayer(victimPlayer);
         const victimIsValid = victim && !victim.deleteIfNotValid();
         const victimKillStreak = victim?.killStreak ?? 0; // This needs to be captured before the victim's kill streak is reset.
+        const bounty = BountyHunter.getBounty(victimKillStreak);
+
+        if (victimPlayer && bounty >= BountyHunter.BIG_BOUNTY_THRESHOLD) {
+            BountyHunter.updateBigBounties(victimPlayer, 0, mod.CreateVector(0, 0, 0)); // TODO: Perhaps position should be undefined.
+        }
 
         if (victimIsValid) {
             victim.killBeforeDeath = victim.killStreak;
             ++victim.deaths;
             victim.setKillStreak(0);
+            victim.bigBountiesUI?.hide();
 
             mod.SetScoreboardPlayerValues(
                 victimPlayer,
@@ -2285,13 +2526,17 @@ class BountyHunter {
 
         if (killer.playerId == victim?.playerId) return;
 
-        dynamicLogger?.log(`<BH> P_${killer ? killer.playerId : 'U'} ended P_${victim ? victim.playerId : 'U'}'s ${victimKillStreak} kill streak.`);
+        dynamicLogger?.log(`<BH> P_${killer ? killer.playerId : 'U'} killed P_${victim ? victim.playerId : 'U'} and got ${bounty} PTS.`);
 
         if (killer.deleteIfNotValid()) return;
 
-        killer.awardBounty(victimKillStreak);
+        killer.awardBounty(victimKillStreak, bounty);
         ++killer.kills;
         killer.setKillStreak(killer.killStreak + 1);
+
+        if (victim) {
+            mod.DisplayHighlightedWorldLogMessage(mod.Message(mod.stringkeys.bountyHunter.hud.killLog, victim.player, victimKillStreak, bounty), killer.player);
+        }
 
         mod.SetGameModeScore(killerPlayer, killer.points);
 
@@ -2334,6 +2579,10 @@ class BountyHunter {
         assister.points += bounty;
         ++assister.assists;
 
+        if (victim) {
+            mod.DisplayHighlightedWorldLogMessage(mod.Message(mod.stringkeys.bountyHunter.hud.assistLog, victim.player, killStreak, bounty), assister.player);
+        }
+
         mod.SetGameModeScore(assisterPlayer, assister.points);
 
         mod.SetScoreboardPlayerValues(
@@ -2349,92 +2598,43 @@ class BountyHunter {
     public static handleDeployed(player: mod.Player): void {
         const bountyHunter = BountyHunter.getFromPlayer(player);
         bountyHunter.killBeforeDeath = 0;
-    }
-
-    public static createWorldIcon(position: mod.Vector): mod.WorldIcon {
-        const worldIcon = mod.SpawnObject(mod.RuntimeSpawn_Common.WorldIcon, position, BountyHunter.ZERO_VECTOR, BountyHunter.WORLD_ICON_SCALE);
-        mod.SetWorldIconColor(worldIcon, UI.COLORS.BF_RED_BRIGHT); // TODO: Use color based on kill streak?
-        mod.SetWorldIconImage(worldIcon, mod.WorldIconImages.Triangle);
-        mod.EnableWorldIconImage(worldIcon, true);
-        mod.EnableWorldIconText(worldIcon, true);
-
-        return worldIcon;
-    }
-
-    public static deleteWorldIcon(worldIcon?: mod.WorldIcon): void {
-        if (!worldIcon) return;
-    
-        mod.UnspawnObject(worldIcon);
+        bountyHunter.bigBountiesUI?.show();
     }
 
     constructor(player: mod.Player) {
         this.player = player;
         this.playerId = mod.GetObjId(player);
 
-        BountyHunter.allBountyHunters[this.playerId] = this;
+        this.isAI = mod.GetSoldierState(player, mod.SoldierStateBool.IsAISoldier);
 
-        const container = UI.createContainer({
-            x: 0,
-            y: 0,
-            width: 450,
-            height: 120,
-            anchor: mod.UIAnchor.TopCenter,
-            bgColor: UI.COLORS.BF_GREY_4,
-            bgAlpha: 0.75,
-            bgFill: mod.UIBgFill.Blur,
-            depth: mod.UIDepth.BelowGameUI
-        }, player);
+        BountyHunter.ALL_BOUNTY_HUNTERS[this.playerId] = this;
 
-        this.killStreakUI = UI.createText({
-            x: 0,
-            y: 60,
-            width: 400,
-            height: 20,
-            anchor: mod.UIAnchor.TopCenter,
-            message: BountyHunter.getKillStreakMessage(0),
-            textSize: 20,
-            textColor: UI.COLORS.BF_GREEN_BRIGHT,
-            parent: container,
-        }, player);
+        if (this.isAI) {
+            // dynamicLogger?.log(`<BH> P_${this.playerId} is an AI soldier, skipping initialization.`);
+            return;
+        }
 
-        this.spottedUI = UI.createText({
-            x: 0,
-            y: 90,
-            width: 400,
-            height: 20,
-            anchor: mod.UIAnchor.TopCenter,
-            message: BountyHunter.getSpottedMessage(0),
-            textSize: 20,
-            textColor: UI.COLORS.BF_GREEN_BRIGHT,
-            parent: container,
-        }, player);
-
-        this.awardUI = UI.createText({
-            x: 0,
-            y: -100,
-            width: 100,
-            height: 32,
-            anchor: mod.UIAnchor.Center,
-            message: BountyHunter.getAwardMessage(0),
-            bgColor: UI.COLORS.BF_GREY_4,
-            bgAlpha: 0.5,
-            bgFill: mod.UIBgFill.Blur,
-            textSize: 24,
-            textColor: UI.COLORS.BF_GREEN_BRIGHT,
-            textAlpha: 0.5,
-            visible: false,
-        }, player);
+        const selfInfoContainer = UI.createContainer(BountyHunter.SELF_INFO_CONTAINER_PARAMS, player);
+    
+        this.killStreakUI = UI.createText(BountyHunter.getKillStreakUIParams(selfInfoContainer), player);
+        this.spottedUI = UI.createText(BountyHunter.getSpottedUIParams(selfInfoContainer), player);
+        this.awardUI = UI.createText(BountyHunter.getAwardUIParams(), player);
+        this.bigBountiesUI = UI.createContainer(BountyHunter.getBigBountyUIParams(), player);
     }
 
     // ---- Private Variables ---- //
 
-    private killStreakUI: UI.Text;
+    private killStreakUI?: UI.Text;
 
-    private spottedUI: UI.Text;
+    private spottedUI?: UI.Text;
 
-    private awardUI: UI.Text;
+    private awardUI?: UI.Text;
+
+    private bigBountiesUI?: UI.Container;
 
     private playerId: number;
+
+    private isAI: boolean = false;
 
     private isSpotted: boolean = false;
 
@@ -2499,33 +2699,70 @@ class BountyHunter {
 
         const bounty = BountyHunter.getBounty(this.killStreak);
 
-        mod.SetWorldIconText(worldIcon, mod.Message(mod.stringkeys.bountyHunter.worldIconText, bounty));
+        mod.SetWorldIconText(worldIcon, mod.Message(mod.stringkeys.bountyHunter.worldIcon, bounty));
 
         dynamicLogger?.log(`<BH> Flagging P_${this.playerId} every ${delay}s (${bounty} PTS).`);
 
         mod.Wait(delay).then(() => this.flag(worldIcon));
+
+        if (bounty < BountyHunter.BIG_BOUNTY_THRESHOLD) return;
+
+        BountyHunter.updateBigBounties(this.player, bounty, position);
     }
 
-    private awardBounty(victimKillStreak: number): void {
+    private awardBounty(victimKillStreak: number, bounty: number): void {
         const sound = BountyHunter.getAwardSound(victimKillStreak);
 
         if (sound) {
             Sounds.play2D(sound.sfxAsset, { duration: 5, player: this.player, amplitude: sound.amplitude });
         }
 
-        const points = BountyHunter.getBounty(victimKillStreak);
+        this.points += bounty;
 
-        this.points += points;
-        this.awardUI.setMessage(BountyHunter.getAwardMessage(points));
+        if (!this.awardUI) return;
+
+        this.awardUI.setMessage(BountyHunter.getAwardMessage(bounty));
         this.awardUI.show();
         
-        mod.Wait(BountyHunter.AWARD_DURATION).then(() => this.awardUI.hide());
+        mod.Wait(BountyHunter.AWARD_DURATION).then(() => this.awardUI?.hide());
     }
 
     private setKillStreak(killStreak: number): void {
         this.killStreak = killStreak;
-        this.killStreakUI.setMessage(BountyHunter.getKillStreakMessage(killStreak));
-        this.spottedUI.setMessage(BountyHunter.getSpottedMessage(killStreak));
+        this.killStreakUI?.setMessage(BountyHunter.getKillStreakMessage(killStreak));
+        this.spottedUI?.setMessage(BountyHunter.getSpottedMessage(killStreak));
+    }
+
+    private updateBigBountiesUI(bigBounties: { bountyHunter: BountyHunter, bounty: number, position: mod.Vector }[]): void {
+        if (this.isAI) return;
+
+        const position = mod.GetSoldierState(this.player, mod.SoldierStateBool.IsAlive) ? mod.GetSoldierState(this.player, mod.SoldierStateVector.GetPosition) : undefined;
+
+        const availableBigBounties = bigBounties.filter(({ bountyHunter }) => bountyHunter.playerId !== this.playerId);
+        const startingIndex = availableBigBounties.length - 1;
+
+        for (let index = BountyHunter.MAX_BIG_BOUNTIES - 1; index >= 0; --index) {
+            const row = this.bigBountiesUI?.children[index] as UI.Container;
+
+            if (index > startingIndex) {
+                (row.children[0] as UI.Text).setMessage(mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.points, 0));
+                (row.children[1] as UI.Text).setMessage(mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.unknownHeading));
+                (row.children[2] as UI.Text).setMessage(mod.Message(-1));
+
+                row.hide();
+
+                continue;
+            }
+
+            const { bountyHunter, bounty, position: bountyPosition } = availableBigBounties[index];
+
+            // child.visible = true;
+            (row.children[0] as UI.Text).setMessage(mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.points, bounty));
+            (row.children[1] as UI.Text).setMessage(BountyHunter.getDistanceMessage(bountyPosition, position));
+            (row.children[2] as UI.Text).setMessage(mod.Message(bountyHunter.player));
+
+            row.show();
+        }
     }
 
     private deleteIfNotValid(): boolean {
@@ -2534,10 +2771,12 @@ class BountyHunter {
         dynamicLogger?.log(`<BH> P_${this.playerId} is no longer in the game.`);
 
         this.killStreak = 0;
-        this.killStreakUI.delete();
-        this.spottedUI.delete();
+        this.killStreakUI?.delete();
+        this.spottedUI?.delete();
 
-        delete BountyHunter.allBountyHunters[this.playerId];
+        BountyHunter.updateBigBounties(this.player, 0, mod.CreateVector(0, 0, 0)); // TODO: Perhaps position should be undefined.
+
+        delete BountyHunter.ALL_BOUNTY_HUNTERS[this.playerId];
 
         return true;
     }
@@ -2677,6 +2916,60 @@ const DEBUG_MENU = {
         {
             type: UI.Type.Button,
             x: 0,
+            y: 120,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            bgColor: UI.COLORS.GREY_25,
+            baseColor: UI.COLORS.BLACK,
+            label: {
+                message: mod.Message(mod.stringkeys.debug.buttons.clearDynamicLogs),
+                textSize: 20,
+                textColor: UI.COLORS.GREEN,
+            },
+            onClick: async (player: mod.Player): Promise<void> => {
+                dynamicLogger?.clear();
+            },
+        },
+        {
+            type: UI.Type.Button,
+            x: 0,
+            y: 140,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            bgColor: UI.COLORS.GREY_25,
+            baseColor: UI.COLORS.BLACK,
+            label: {
+                message: mod.Message(mod.stringkeys.debug.buttons.giveAIKill10),
+                textSize: 20,
+                textColor: UI.COLORS.GREEN,
+            },
+            onClick: async (player: mod.Player): Promise<void> => {
+                BountyHunter.handleKill(mod.ValueInArray(mod.AllPlayers(), 10));
+            },
+        },
+        {
+            type: UI.Type.Button,
+            x: 0,
+            y: 160,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            bgColor: UI.COLORS.GREY_25,
+            baseColor: UI.COLORS.BLACK,
+            label: {
+                message: mod.Message(mod.stringkeys.debug.buttons.giveAIKill20),
+                textSize: 20,
+                textColor: UI.COLORS.GREEN,
+            },
+            onClick: async (player: mod.Player): Promise<void> => {
+                BountyHunter.handleKill(mod.ValueInArray(mod.AllPlayers(), 20));
+            },
+        },
+        {
+            type: UI.Type.Button,
+            x: 0,
             y: 0,
             width: 300,
             height: 20,
@@ -2696,7 +2989,7 @@ const DEBUG_MENU = {
     ]
 };
 
-export function OnPlayerUIButtonEvent(player: mod.Player, widget: mod.UIWidget, event: mod.UIButtonEvent) {
+export function OnPlayerUIButtonEvent(player: mod.Player, widget: mod.UIWidget, event: mod.UIButtonEvent): void {
     UI.handleButtonClick(player, widget, event);
 }
 
@@ -2726,6 +3019,15 @@ export function OnTimeLimitReached(): void {
     } else {
         mod.EndGameMode(mod.GetTeam(0));
     }
+}
+
+export function OngoingPlayer(eventPlayer: mod.Player): void {
+    if (mod.GetObjId(eventPlayer) != 0) return;
+
+    if (!InteractMultiClickDetector.checkMultiClick(eventPlayer)) return;
+
+    debugMenu?.show();
+    mod.EnableUIInputMode(true, eventPlayer);
 }
 
 export function OnPlayerJoinGame(eventPlayer: mod.Player): void {
@@ -2793,11 +3095,6 @@ export function OnPlayerDeployed(eventPlayer: mod.Player): void {
 function debug(player: mod.Player): void {
     mod.Wait(0.5).then(() => {
         if (!mod.GetSoldierState(player, mod.SoldierStateBool.IsAlive)) return;
-
-        if (mod.GetSoldierState(player, mod.SoldierStateBool.IsProne) && mod.GetSoldierState(player, mod.SoldierStateBool.IsReloading)) {
-            debugMenu?.show();
-            mod.EnableUIInputMode(true, player);
-        }
 
         staticLogger?.log(`Position: ${getPlayerStateVectorString(player, mod.SoldierStateVector.GetPosition)}`, 0);
         staticLogger?.log(`Facing: ${getPlayerStateVectorString(player, mod.SoldierStateVector.GetFacingDirection)}`, 1);
