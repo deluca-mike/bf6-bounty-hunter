@@ -302,22 +302,22 @@ declare namespace mod {
         Throwable,
     }
     export enum Maps {
-        Abbasid,
-        Aftermath,
-        Badlands,
-        Battery,
-        Capstone,
-        Dumbo,
-        Eastwood,
-        Firestorm,
-        Granite_ClubHouse,
-        Granite_MainStreet,
-        Granite_Marina,
-        Granite_TechCampus,
-        Limestone,
-        Outskirts,
-        Sand,
-        Tungsten,
+        Abbasid, // Siege of Cairo
+        Aftermath, // Empire State
+        Badlands, // Blackwell Fields
+        Battery, // Iberian Offensive
+        Capstone, // Liberation Peak
+        Dumbo, // Manhattan Bridge
+        Eastwood, // Eastwood
+        Firestorm, // Operation Firestorm
+        Granite_ClubHouse, // Golf Course
+        Granite_MainStreet, // Downtown
+        Granite_Marina, // Marina
+        Granite_TechCampus, // Defense Nexus
+        Limestone, // Saints Quarter
+        Outskirts, // New Sobek City
+        Sand, // Portal Sandbox Marina
+        Tungsten, // Mirak Valley
     }
     export enum MeleeWeapons {}
     export enum MiscGadgets {}
@@ -20140,6 +20140,8 @@ declare namespace mod {
     export function SetVariableAtIndex(arrayVariable: Variable, arrayIndex: number, value: Any): void;
 
     // Plays a sound using runtime spawner tech.
+    // NOTE: Sounds must be spawned with the `SpawnObject` function, and take some time to load.
+    // TODO: Unclear of paramater overlap with `SpawnObject`.
     export function PlaySound(objectId: number, amplitude: number, team: Team): void;
 
     // Plays a sound using runtime spawner tech.

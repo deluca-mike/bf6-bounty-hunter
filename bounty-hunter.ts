@@ -698,7 +698,6 @@ namespace Logger {
 
 }
 
-// TODO: analyzeHealth shjould be a method to get the health status and log it.
 class PerformanceStats {
     
     private sampleRateSeconds: number = 0.5; // 0.5 is ideal as it aligns perfectly with both 30Hz and 60Hz
@@ -720,10 +719,13 @@ class PerformanceStats {
         return this.cachedTickRate;
     }
     
+    // This should be called once every tick, so it is best to be called in the `OngoingGlobal()` event handler.
     public trackPerformanceTick(): void {
         this.tickBucket++;
     }
 
+    // This starts the performance heartbeat, which is a loop that tracks the performance of the script. It can be called once, any time.
+    // If called multiple times, it will only start one loop.
     public startPerformanceHeartbeat(): void {
         if (this.isStarted) return;
 
@@ -895,14 +897,14 @@ class FFASpawningSoldier {
 
             const spawn = FFASpawningSoldier.getBestSpawnPoint();
 
-            FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `Spawning P-${soldier.playerId} at ${FFASpawningSoldier.getVectorString(spawn.location)}.`);
+            FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `Spawning P_${soldier.playerId} at ${FFASpawningSoldier.getVectorString(spawn.location)}.`);
 
             mod.SpawnPlayerFromSpawnPoint(soldier.player, spawn.spawnPoint);
         }
 
         mod.Wait(FFASpawningSoldier.QUEUE_PROCESSING_DELAY).then(() => FFASpawningSoldier.processSpawnQueue());
     }
-    
+
     public static getVectorString(vector: mod.Vector): string {
         return `<${mod.XComponentOf(vector).toFixed(2)}, ${mod.YComponentOf(vector).toFixed(2)}, ${mod.ZComponentOf(vector).toFixed(2)}>`;
     }
@@ -930,13 +932,13 @@ class FFASpawningSoldier {
         this.maximumInterestingDistance = options?.maximumInterestingDistance ?? this.maximumInterestingDistance;
         this.safeOverInterestingFallbackFactor = options?.safeOverInterestingFallbackFactor ?? this.safeOverInterestingFallbackFactor;
 
-        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Info, `Set ${FFASpawningSoldier.spawns.length} spawn points (MSD: ${this.minimumSafeDistance}m, MID: ${this.maximumInterestingDistance}m, SOIF: ${this.safeOverInterestingFallbackFactor}).`);
+        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Info, `Set ${FFASpawningSoldier.spawns.length} spawn points (S: ${this.minimumSafeDistance}m, I: ${this.maximumInterestingDistance}m, F: ${this.safeOverInterestingFallbackFactor}).`);
     }
 
     // Starts the countdown before prompting the player to spawn or delay again, usually in the `OnPlayerJoinGame()` and `OnPlayerUndeploy()` events.
     // AI soldiers will skip the countdown and spawn immediately.
     public static startDelayForPrompt(player: mod.Player): void {
-        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `Start delay request for P-${mod.GetObjId(player)}.`);
+        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `Start delay request for P_${mod.GetObjId(player)}.`);
 
         const soldier = FFASpawningSoldier.allSoldiers[mod.GetObjId(player)];
 
@@ -973,7 +975,7 @@ class FFASpawningSoldier {
         FFASpawningSoldier.queueProcessingEnabled = false;
     }
 
-    // Every player that should be ahndled by this spawning system should be instantiated as a `FFASpawningSoldier`, usually in the `OnPlayerSpawned()` event.
+    // Every player that should be handled by this spawning system should be instantiated as a `FFASpawningSoldier`, usually in the `OnPlayerSpawned()` event.
     constructor(player: mod.Player) {
         this.player = player;
         this.playerId = mod.GetObjId(player);
@@ -1075,7 +1077,7 @@ class FFASpawningSoldier {
     // Starts the countdown before prompting the player to spawn or delay again, usually in the `OnPlayerJoinGame()` and `OnPlayerUndeploy()` events.
     // AI soldiers will skip the countdown and spawn immediately.
     public startDelayForPrompt(): void {
-        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `Starting delay for P-${this.playerId}.`);
+        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `Starting delay for P_${this.playerId}.`);
 
         if (mod.GetSoldierState(this.player, mod.SoldierStateBool.IsAISoldier)) return this.addToQueue();
 
@@ -1106,7 +1108,7 @@ class FFASpawningSoldier {
     private addToQueue(): void {
         FFASpawningSoldier.spawnQueue.push(this);
 
-        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `P-${this.playerId} added to queue (${FFASpawningSoldier.spawnQueue.length} total).`);
+        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Debug, `P_${this.playerId} added to queue (${FFASpawningSoldier.spawnQueue.length} total).`);
 
         this.countdownUI?.hide();
         this.promptUI?.hide();
@@ -1121,7 +1123,7 @@ class FFASpawningSoldier {
     private deleteIfNotValid(): boolean {
         if (mod.IsPlayerValid(this.player)) return false;
 
-        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Info, `P-${this.playerId} is no longer in the game.`);
+        FFASpawningSoldier.log(FFASpawningSoldier.LogLevel.Info, `P_${this.playerId} is no longer in the game.`);
 
         this.promptUI?.delete();
         this.countdownUI?.delete();
@@ -1767,7 +1769,7 @@ class PlayerUndeployFixer {
 
     private static lastPlayerUndeployTime: {[playerId: number]: number} = {};
 
-    public static playerDied(player: mod.Player): void {
+    public static playerDied(player: mod.Player, undeployCallback: (player: mod.Player) => void): void {
         const playerId = mod.GetObjId(player);
         
         const thisDeathTime = mod.GetMatchTimeElapsed();
@@ -1780,9 +1782,9 @@ class PlayerUndeployFixer {
 
             if (!isSameDeathEvent || hasUndeployed) return;
 
-            dynamicLogger?.log(`<PUF> P-${playerId} stuck in limbo. Force undeploying.`);
+            dynamicLogger?.log(`<PUF> P_${playerId} stuck in limbo. Calling undeployCallback.`);
 
-            mod.UndeployPlayer(player);
+            undeployCallback(player);
         });
     }
 
@@ -1970,7 +1972,7 @@ class BountyHunter {
         ++killer.kills;
         killer.setKillStreak(killer.killStreak + 1);
 
-        // dynamicLogger?.log(`<BH> P-${killer.playerId} killed P-${victim ? victim.playerId : 'U'} and got ${bounty} PTS.`);
+        // dynamicLogger?.log(`<BH> P_${killer.playerId} killed P_${victim ? victim.playerId : 'U'} and got ${bounty} PTS.`);
 
         if (killer.deleteIfNotValid()) return;
 
@@ -2011,7 +2013,7 @@ class BountyHunter {
         assister.points += bounty;
         ++assister.assists;
 
-        dynamicLogger?.log(`P-${assister.playerId} assisted in killing P-${victim ? victim.playerId : 'U'} and got ${bounty} PTS.`);
+        dynamicLogger?.log(`P_${assister.playerId} assisted in killing P_${victim ? victim.playerId : 'U'} and got ${bounty} PTS.`);
 
         if (assister.deleteIfNotValid()) return;
 
@@ -2146,12 +2148,12 @@ class BountyHunter {
         const delay = BountyHunter.getSpottingDelay(this.killStreak);
 
         if (!delay || !duration) {
-            // dynamicLogger?.log(`<BH> Suspending spotting for P-${this.playerId}.`);
+            // dynamicLogger?.log(`<BH> Suspending spotting for P_${this.playerId}.`);
             this.isSpotted = false;
             return;
         }
 
-        dynamicLogger?.log(`<BH> Spotting P-${this.playerId} for ${duration}s on, ${delay}s off.`);
+        dynamicLogger?.log(`<BH> Spotting P_${this.playerId} for ${duration}s on, ${delay}s off.`);
 
         mod.SpotTarget(this.player, duration, mod.SpotStatus.SpotInBoth);
         mod.Wait(duration + delay).then(() => this.spot());
@@ -2163,7 +2165,7 @@ class BountyHunter {
         const delay = BountyHunter.getFlaggingDelay(this.killStreak);
 
         if (!delay) {
-            // dynamicLogger?.log(`<BH> Suspending flagging for P-${this.playerId}.`);
+            // dynamicLogger?.log(`<BH> Suspending flagging for P_${this.playerId}.`);
 
             this.isFlagged = false;
             
@@ -2182,7 +2184,7 @@ class BountyHunter {
 
         mod.SetWorldIconText(worldIcon, mod.Message(mod.stringkeys.bountyHunter.worldIconText, bounty));
 
-        dynamicLogger?.log(`<BH> Flagging P-${this.playerId} every ${delay}s (${bounty} PTS).`);
+        dynamicLogger?.log(`<BH> Flagging P_${this.playerId} every ${delay}s (${bounty} PTS).`);
 
         mod.Wait(delay).then(() => this.flag(worldIcon));
     }
@@ -2204,7 +2206,7 @@ class BountyHunter {
     private deleteIfNotValid(): boolean {
         if (mod.IsPlayerValid(this.player)) return false;
 
-        dynamicLogger?.log(`<BH> P-${this.playerId} is no longer in the game.`);
+        dynamicLogger?.log(`<BH> P_${this.playerId} is no longer in the game.`);
 
         this.killStreak = 0;
         this.killStreakUI.delete();
@@ -2316,7 +2318,7 @@ const DEBUG_MENU = {
             onClick: async (player: mod.Player): Promise<void> => {
                 playerId = (playerId + 1) % 32;
 
-                const logLine = `P-${playerId} last log: ${playerLogs[playerId] && playerLogs[playerId].length > 0 ? playerLogs[playerId][playerLogs[playerId].length - 1] : 'No logs'}`;
+                const logLine = `P_${playerId} last log: ${playerLogs[playerId] && playerLogs[playerId].length > 0 ? playerLogs[playerId][playerLogs[playerId].length - 1] : 'No logs'}`;
 
                 staticLogger?.log(logLine, 4);
             },
@@ -2338,10 +2340,13 @@ const DEBUG_MENU = {
             onClick: async (player: mod.Player): Promise<void> => {
                 const lastLogIndex = playerLogs[playerId] && playerLogs[playerId].length > 0 ? playerLogs[playerId].length - 1 : -1;
 
-                staticLogger?.log(lastLogIndex >= 3 ? playerLogs[playerId][lastLogIndex - 3] : 'No logs', 6);
-                staticLogger?.log(lastLogIndex >= 2 ? playerLogs[playerId][lastLogIndex - 2] : 'No logs', 7);
-                staticLogger?.log(lastLogIndex >= 1 ? playerLogs[playerId][lastLogIndex - 1] : 'No logs', 8);
-                staticLogger?.log(lastLogIndex >= 0 ? playerLogs[playerId][lastLogIndex] : 'No logs', 9);
+                staticLogger?.log(lastLogIndex >= 6 ? playerLogs[playerId][lastLogIndex - 6] : 'No logs', 6);
+                staticLogger?.log(lastLogIndex >= 5 ? playerLogs[playerId][lastLogIndex - 5] : 'No logs', 7);
+                staticLogger?.log(lastLogIndex >= 4 ? playerLogs[playerId][lastLogIndex - 4] : 'No logs', 8);
+                staticLogger?.log(lastLogIndex >= 3 ? playerLogs[playerId][lastLogIndex - 3] : 'No logs', 9);
+                staticLogger?.log(lastLogIndex >= 2 ? playerLogs[playerId][lastLogIndex - 2] : 'No logs', 10);
+                staticLogger?.log(lastLogIndex >= 1 ? playerLogs[playerId][lastLogIndex - 1] : 'No logs', 11);
+                staticLogger?.log(lastLogIndex >= 0 ? playerLogs[playerId][lastLogIndex] : 'No logs', 12);
             },
         },
         {
@@ -2396,14 +2401,14 @@ export function OnTimeLimitReached(): void {
 }
 
 export function OnPlayerJoinGame(eventPlayer: mod.Player): void {
-    // playerLogs[mod.GetObjId(eventPlayer)] = [`OnPlayerJoinGame started`];
+    playerLogs[mod.GetObjId(eventPlayer)] = [`OnPlayerJoinGame started`];
 
     new BountyHunter(eventPlayer);
     const soldier = new FFASpawningSoldier(eventPlayer);
 
     soldier.startDelayForPrompt();
 
-    // playerLogs[mod.GetObjId(eventPlayer)] = [`OnPlayerJoinGame completed`];
+    playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerJoinGame completed`);
 
     if (mod.GetObjId(eventPlayer) != 0) return;
 
@@ -2418,21 +2423,21 @@ export function OnPlayerJoinGame(eventPlayer: mod.Player): void {
 }
 
 export function OnPlayerDied(victimPlayer: mod.Player, killerPlayer: mod.Player, eventDeathType: mod.DeathType, eventWeaponUnlock: mod.WeaponUnlock): void {
-    // playerLogs[mod.GetObjId(victimPlayer)].push(`OnPlayerDied started`);
+    playerLogs[mod.GetObjId(victimPlayer)].push(`OnPlayerDied started`);
 
     BountyHunter.handleKill(killerPlayer, victimPlayer);
-    PlayerUndeployFixer.playerDied(victimPlayer);
+    PlayerUndeployFixer.playerDied(victimPlayer, (player: mod.Player) => OnPlayerUndeploy(player));
 
-    // playerLogs[mod.GetObjId(victimPlayer)].push(`OnPlayerDied completed`);
+    playerLogs[mod.GetObjId(victimPlayer)].push(`OnPlayerDied completed`);
 }
 
 export function OnPlayerUndeploy(eventPlayer: mod.Player): void {
-    // playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerUndeploy started`);
+    playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerUndeploy started`);
 
     PlayerUndeployFixer.playerUndeployed(eventPlayer);
     FFASpawningSoldier.startDelayForPrompt(eventPlayer);
 
-    // playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerUndeploy completed`);
+    playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerUndeploy completed`);
 
     if (mod.GetObjId(eventPlayer) != 0) return;
 
@@ -2446,11 +2451,11 @@ export function OnPlayerEarnedKillAssist(assisterPlayer: mod.Player, victimPlaye
 }
 
 export function OnPlayerDeployed(eventPlayer: mod.Player): void {
-    // playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerDeployed started`);
+    playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerDeployed started`);
 
     BountyHunter.handleDeployed(eventPlayer);
 
-    // playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerDeployed completed`);
+    playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerDeployed completed`);
 
     if (mod.GetObjId(eventPlayer) != 0) return;
 
