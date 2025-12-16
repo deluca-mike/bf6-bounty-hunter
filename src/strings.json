@@ -1,0 +1,50 @@
+{
+    "bountyHunter": {
+        "hud": {
+            "killStreak": "Streak: {}        Bounty on your head: {} PTS",
+            "spotted": "Spotted {} seconds on / {} seconds off",
+            "notSpotted": "Not Spotted",
+            "award": "+ {} PTS",
+            "killLog": "Ended {}'s {}-kill streak (+ {} PTS)",
+            "assistLog": "Helped end {}'s {}-kill streak (+ {} PTS)",
+            "bigBounty": {
+                "points": "{} PT Bounty",
+                "headingN": "{}m N",
+                "headingNE": "{}m NE",
+                "headingE": "{}m E",
+                "headingSE": "{}m SE",
+                "headingS": "{}m S",
+                "headingSW": "{}m SW",
+                "headingW": "{}m W",
+                "headingNW": "{}m NW",
+                "unknownHeading": "?m ?"
+            }
+        },
+        "scoreboard": {
+            "header": "Target Points: {} - Leader: {}",
+            "none": "None",
+            "columns": {
+                "points": "Points",
+                "kills": "Kills",
+                "assists": "Assists",
+                "deaths": "Deaths",
+                "bounty": "Bounty"
+            }
+        },
+        "worldIcon": "{} PT Bounty"
+    },
+    "debug": {
+        "buttons": {
+            "toggleStaticLogger": "Toggle Static Logger",
+            "toggleDynamicLogger": "Toggle Dynamic Logger",
+            "giveKill": "Give Kill",
+            "giveAssist": "Give Assist",
+            "cyclePlayerLogs": "Cycle Player Logs",
+            "printPlayerLogs": "Print Player Logs",
+            "clearDynamicLogs": "Clear Dynamic Logs",
+            "giveAIKill10": "Give AI 10 Kill",
+            "giveAIKill20": "Give AI 20 Kill",
+            "close": "Close"
+        }
+    }
+}
