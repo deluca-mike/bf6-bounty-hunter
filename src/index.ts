@@ -1,34 +1,32 @@
-import { FFASpawning } from 'bf6-portal-utils/ffa-spawning';
-import { InteractMultiClickDetector } from 'bf6-portal-utils/interact-multi-click-detector';
-import { Logger } from 'bf6-portal-utils/logger';
-import { MapDetector } from 'bf6-portal-utils/map-detector';
-import { PerformanceStats } from 'bf6-portal-utils/performance-stats';
-import { Sounds } from 'bf6-portal-utils/sounds';
-import { UI } from 'bf6-portal-utils/ui';
+import { FFASpawning } from 'bf6-portal-utils/ffa-spawning/index.ts';
+import { InteractMultiClickDetector } from 'bf6-portal-utils/interact-multi-click-detector/index.ts';
+import { Logger } from 'bf6-portal-utils/logger/index.ts';
+import { PerformanceStats } from 'bf6-portal-utils/performance-stats/index.ts';
+import { Sounds } from 'bf6-portal-utils/sounds/index.ts';
+import { UI } from 'bf6-portal-utils/ui/index.ts';
+import { MapDetector } from 'bf6-portal-utils/map-detector/index.ts';
 
-import { PlayerUndeployFixer } from './utils/player-undeploy-fixer';
+import { PlayerUndeployFixer } from './utils/player-undeploy-fixer.ts';
+import { Timers } from './utils/timers.ts';
+import { createVehicleSpawner } from './utils/vehicle-spawner.ts';
 
-import {
-    EASTWOOD_SPAWNS,
-    EASTWOOD_FFA_SPAWNING_SOLDIER_OPTIONS,
-    EMPIRE_STATE_SPAWNS,
-    EMPIRE_STATE_FFA_SPAWNING_SOLDIER_OPTIONS,
-} from './spawns';
+import { getPlayerStateVectorString } from './helpers/index.ts';
+
+import { getSpawnDataAndInitializeOptions } from './spawns.ts';
+
+const DEBUGGING = false;
 
 let staticLogger: Logger | undefined;
 let dynamicLogger: Logger | undefined;
 let performanceStats: PerformanceStats | undefined;
 let debugMenu: UI.Container | undefined;
 
-let playerId: number = 0;
-const playerLogs: { [playerId: number]: string[] } = {};
-
 // TODO: Assists
 // TODO: Refresh/clear scoreboard of leavers.
 class BountyHunter {
     // ---- Private Static Constants ---- //
 
-    private static readonly _TARGET_POINTS: number = 500;
+    private static readonly _TARGET_POINTS: number = 250;
 
     private static readonly _BASE_KILL_POINTS: number = 10;
 
@@ -199,12 +197,16 @@ class BountyHunter {
     }
 
     private static _updateBigBounties(player: mod.Player, bounty: number, position: mod.Vector): void {
-        this._BIG_BOUNTIES.set(mod.GetObjId(player), { bounty, position });
+        if (bounty < this._BIG_BOUNTY_THRESHOLD) {
+            this._BIG_BOUNTIES.delete(mod.GetObjId(player));
+        } else {
+            this._BIG_BOUNTIES.set(mod.GetObjId(player), { bounty, position });
+        }
+
+        // dynamicLogger?.logAsync(`<BH> ${this._BIG_BOUNTIES.size} total big bounties.`);
 
         const bigBounties = Array.from(this._BIG_BOUNTIES.entries())
-            .filter(([_, { bounty }]) => bounty >= this._BIG_BOUNTY_THRESHOLD)
             .sort((a, b) => a[1].bounty - b[1].bounty) // Ascending sort.
-            .slice(0, this._MAX_BIG_BOUNTIES)
             .map(([playerId, { bounty, position }]) => ({
                 bountyHunter: this.getFromPlayerId(playerId),
                 bounty,
@@ -373,7 +375,7 @@ class BountyHunter {
             mod.Message(mod.stringkeys.bountyHunter.scoreboard.columns.bounty)
         );
 
-        // dynamicLogger?.log(`Setting up scoreboard header.`);
+        // dynamicLogger?.logAsync(`Setting up scoreboard header.`);
         // const headerName = mod.Message(
         //     mod.stringkeys.bountyHunter.scoreboard.header,
         //     this._TARGET_POINTS,
@@ -382,7 +384,7 @@ class BountyHunter {
 
         // mod.SetScoreboardHeader(headerName);
 
-        // dynamicLogger?.log(`Setting up scoreboard sorting.`);
+        // dynamicLogger?.logAsync(`Setting up scoreboard sorting.`);
         // mod.SetScoreboardSorting(1);
 
         // mod.SetScoreboardSorting(0, false);
@@ -421,6 +423,7 @@ class BountyHunter {
             ++victim._deaths;
             victim._setKillStreak(0);
             victim._bigBountiesUI?.hide();
+            victim._stopFlagging();
 
             mod.SetScoreboardPlayerValues(
                 victimPlayer,
@@ -434,9 +437,9 @@ class BountyHunter {
 
         if (killer._playerId == victim?._playerId) return;
 
-        dynamicLogger?.log(
-            `<BH> P_${killer ? killer._playerId : 'U'} killed P_${victim ? victim._playerId : 'U'} and got ${bounty} PTS.`
-        );
+        // dynamicLogger?.logAsync(
+        //     `<BH> P_${killer ? killer._playerId : 'U'} killed P_${victim ? victim._playerId : 'U'} and got ${bounty} PTS.`
+        // );
 
         if (killer._deleteIfNotValid()) return;
 
@@ -462,14 +465,29 @@ class BountyHunter {
             this._getBounty(killer._killStreak)
         );
 
-        if (!killer._isSpotted && this._getSpottingDelay(killer._killStreak)) {
-            killer._isSpotted = true;
-            killer._spot();
+        const spottingDelay = this._getSpottingDelay(killer._killStreak);
+
+        if (spottingDelay) {
+            Timers.clearInterval(killer._spottingIntervalId);
+
+            const spottingDuration = this._getSpottingDuration(killer._killStreak);
+
+            killer._spottingIntervalId = Timers.setInterval(
+                () => killer._spot(spottingDuration),
+                spottingDuration + spottingDelay,
+                true
+            );
         }
 
-        if (!killer._isFlagged && this._getFlaggingDelay(killer._killStreak)) {
-            killer._isFlagged = true;
-            killer._flag();
+        const flaggingDelay = this._getFlaggingDelay(killer._killStreak);
+
+        if (flaggingDelay) {
+            Timers.clearInterval(killer._flaggingIntervalId);
+
+            const bounty = BountyHunter._getBounty(killer._killStreak);
+            const flag = killer._getFlag(bounty);
+
+            killer._flaggingIntervalId = Timers.setInterval(() => killer._flag(bounty, flag), flaggingDelay, true);
         }
     }
 
@@ -485,7 +503,7 @@ class BountyHunter {
 
         const bounty = ~~(this._getBounty(killStreak || killStreakBeforeDeath) / 2);
 
-        dynamicLogger?.log(
+        dynamicLogger?.logAsync(
             `P_${assister ? assister._playerId : 'U'} assisted in killing P_${victim ? victim._playerId : 'U'} and got ${bounty} PTS.`
         );
 
@@ -528,7 +546,7 @@ class BountyHunter {
         BountyHunter._ALL_BOUNTY_HUNTERS[this._playerId] = this;
 
         if (this._isAI) {
-            // dynamicLogger?.log(`<BH> P_${this._playerId} is an AI soldier, skipping initialization.`);
+            // dynamicLogger?.logAsync(`<BH> P_${this._playerId} is an AI soldier, skipping initialization.`);
             return;
         }
 
@@ -556,9 +574,11 @@ class BountyHunter {
 
     private _isAI: boolean = false;
 
-    private _isSpotted: boolean = false;
+    private _spottingIntervalId?: number;
 
-    private _isFlagged: boolean = false;
+    private _flaggingIntervalId?: number;
+
+    private _flaggingWorldIcon?: mod.WorldIcon;
 
     private _killStreakBeforeDeath: number = 0;
 
@@ -608,57 +628,45 @@ class BountyHunter {
 
     // ---- Private Methods ---- //
 
-    private _spot(): void {
+    private _spot(duration: number): void {
         if (this._deleteIfNotValid()) return;
 
-        const duration = BountyHunter._getSpottingDuration(this._killStreak);
-        const delay = BountyHunter._getSpottingDelay(this._killStreak);
-
-        if (!delay || !duration) {
-            // dynamicLogger?.log(`<BH> Suspending spotting for P_${this._playerId}.`);
-            this._isSpotted = false;
-            return;
-        }
-
-        dynamicLogger?.log(`<BH> Spotting P_${this._playerId} for ${duration}s on, ${delay}s off.`);
-
         mod.SpotTarget(this._player, duration, mod.SpotStatus.SpotInBoth);
-        mod.Wait(duration + delay).then(() => this._spot());
+
+        dynamicLogger?.logAsync(`<BH> Spotting P_${this._playerId} for ${duration}s.`);
     }
 
-    private _flag(worldIcon?: mod.WorldIcon): void {
-        if (this._deleteIfNotValid()) return BountyHunter._deleteWorldIcon(worldIcon);
+    private _getFlag(bounty: number): mod.WorldIcon {
+        this._flaggingWorldIcon = this._flaggingWorldIcon ?? BountyHunter._createWorldIcon(BountyHunter._ZERO_VECTOR);
 
-        const delay = BountyHunter._getFlaggingDelay(this._killStreak);
+        mod.SetWorldIconText(this._flaggingWorldIcon, mod.Message(mod.stringkeys.bountyHunter.worldIcon, bounty));
 
-        if (!delay) {
-            // dynamicLogger?.log(`<BH> Suspending flagging for P_${this._playerId}.`);
+        return this._flaggingWorldIcon;
+    }
 
-            this._isFlagged = false;
+    private _stopFlagging(): void {
+        if (!this._flaggingIntervalId) return;
 
-            return BountyHunter._deleteWorldIcon(worldIcon);
-        }
+        Timers.clearInterval(this._flaggingIntervalId);
+        this._flaggingIntervalId = undefined;
+
+        if (!this._flaggingWorldIcon) return;
+
+        BountyHunter._deleteWorldIcon(this._flaggingWorldIcon);
+        this._flaggingWorldIcon = undefined;
+    }
+
+    private _flag(bounty: number, flaggingWorldIcon: mod.WorldIcon): void {
+        if (this._deleteIfNotValid()) return;
 
         const position = mod.Add(
             mod.GetSoldierState(this._player, mod.SoldierStateVector.GetPosition),
             BountyHunter._WORLD_ICON_OFFSET
         );
 
-        if (worldIcon) {
-            mod.SetWorldIconPosition(worldIcon, position);
-        } else {
-            worldIcon = BountyHunter._createWorldIcon(position);
-        }
+        mod.SetWorldIconPosition(flaggingWorldIcon, position);
 
-        const bounty = BountyHunter._getBounty(this._killStreak);
-
-        mod.SetWorldIconText(worldIcon, mod.Message(mod.stringkeys.bountyHunter.worldIcon, bounty));
-
-        dynamicLogger?.log(`<BH> Flagging P_${this._playerId} every ${delay}s (${bounty} PTS).`);
-
-        mod.Wait(delay).then(() => this._flag(worldIcon));
-
-        if (bounty < BountyHunter._BIG_BOUNTY_THRESHOLD) return;
+        dynamicLogger?.logAsync(`<BH> Flagged P_${this._playerId} (Bounty: ${bounty} PTS).`);
 
         BountyHunter._updateBigBounties(this._player, bounty, position);
     }
@@ -695,35 +703,31 @@ class BountyHunter {
             ? mod.GetSoldierState(this._player, mod.SoldierStateVector.GetPosition)
             : undefined;
 
-        const availableBigBounties = bigBounties.filter(
-            ({ bountyHunter }) => bountyHunter._playerId !== this._playerId
-        );
+        const availableBigBounties = bigBounties
+            .filter(({ bountyHunter }) => bountyHunter._playerId !== this._playerId)
+            .slice(0, BountyHunter._MAX_BIG_BOUNTIES);
+
+        // if (this._playerId === 0) {
+        //     dynamicLogger?.logAsync(`<BH> Updating big bounties UI with ${availableBigBounties.length} big bounties.`);
+        // }
+
         const startingIndex = availableBigBounties.length - 1;
 
         for (let index = BountyHunter._MAX_BIG_BOUNTIES - 1; index >= 0; --index) {
             const row = this._bigBountiesUI?.children[index] as UI.Container;
 
             if (index > startingIndex) {
-                (row.children[0] as UI.Text).setMessage(
-                    mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.points, 0)
-                );
-                (row.children[1] as UI.Text).setMessage(
-                    mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.unknownHeading)
-                );
-                (row.children[2] as UI.Text).setMessage(mod.Message(-1));
-
                 row.hide();
-
                 continue;
             }
 
+            const rowChildren = row.children as UI.Text[];
+
             const { bountyHunter, bounty, position: bountyPosition } = availableBigBounties[index];
 
-            (row.children[0] as UI.Text).setMessage(
-                mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.points, bounty)
-            );
-            (row.children[1] as UI.Text).setMessage(BountyHunter._getDistanceMessage(bountyPosition, position));
-            (row.children[2] as UI.Text).setMessage(mod.Message(bountyHunter.player));
+            rowChildren[0].setMessage(mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.points, bounty));
+            rowChildren[1].setMessage(BountyHunter._getDistanceMessage(bountyPosition, position));
+            rowChildren[2].setMessage(mod.Message(bountyHunter.player));
 
             row.show();
         }
@@ -732,11 +736,15 @@ class BountyHunter {
     private _deleteIfNotValid(): boolean {
         if (mod.IsPlayerValid(this._player)) return false;
 
-        dynamicLogger?.log(`<BH> P_${this._playerId} is no longer in the game.`);
+        dynamicLogger?.logAsync(`<BH> P_${this._playerId} is no longer in the game.`);
 
+        this._stopFlagging();
+        Timers.clearInterval(this._spottingIntervalId);
         this._killStreak = 0;
         this._killStreakUI?.delete();
         this._spottedUI?.delete();
+        this._awardUI?.delete();
+        this._bigBountiesUI?.delete();
 
         BountyHunter._updateBigBounties(this._player, 0, mod.CreateVector(0, 0, 0)); // TODO: Perhaps position should be undefined.
 
@@ -745,6 +753,31 @@ class BountyHunter {
         return true;
     }
 }
+
+const EASTWOOD_VEHICLE_SPAWNS: { position: mod.Vector; orientation: number; spawner?: mod.VehicleSpawner }[] = [
+    { position: mod.CreateVector(-120.1, 233.56, 119.31), orientation: 165 },
+    { position: mod.CreateVector(-140.71, 233.92, 201.34), orientation: 165 },
+    { position: mod.CreateVector(-143.84, 232.07, -52.17), orientation: 195 },
+    { position: mod.CreateVector(-217.75, 232.44, -71.8), orientation: 180 },
+    { position: mod.CreateVector(-227.42, 231.72, 98.61), orientation: 195 },
+    { position: mod.CreateVector(-29.41, 224.58, 307.04), orientation: 10 },
+    { position: mod.CreateVector(-234.72, 232.0, 2.4), orientation: 345 },
+    { position: mod.CreateVector(-257.67, 230.56, 40.01), orientation: 15 },
+    { position: mod.CreateVector(-290.52, 231.01, 64.09), orientation: 120 },
+    { position: mod.CreateVector(-312.76, 230.72, -75.22), orientation: 240 },
+    { position: mod.CreateVector(-34.92, 237.75, 99.43), orientation: 15 },
+    { position: mod.CreateVector(-82.81, 231.48, -6.97), orientation: 0 },
+    { position: mod.CreateVector(115.6, 232.77, -33.15), orientation: 45 },
+    { position: mod.CreateVector(128.51, 224.15, 97.84), orientation: 345 },
+    { position: mod.CreateVector(137.39, 232.04, -2.6), orientation: 68 },
+    { position: mod.CreateVector(166.25, 240.04, -196.81), orientation: 180 },
+    { position: mod.CreateVector(232.85, 229.41, 39.2), orientation: 345 },
+    { position: mod.CreateVector(312.06, 232.39, -17.16), orientation: 195 },
+    { position: mod.CreateVector(34.61, 234.35, -12.16), orientation: 45 },
+    { position: mod.CreateVector(62.12, 233.11, -56.33), orientation: 0 },
+    { position: mod.CreateVector(70.73, 227.54, 113.09), orientation: 0 },
+    { position: mod.CreateVector(75.96, 229.28, 73.16), orientation: 255 },
+];
 
 const DEBUG_MENU = {
     x: 0,
@@ -831,55 +864,6 @@ const DEBUG_MENU = {
         {
             type: UI.Type.Button,
             x: 0,
-            y: 80,
-            width: 300,
-            height: 20,
-            anchor: mod.UIAnchor.TopCenter,
-            bgColor: UI.COLORS.GREY_25,
-            baseColor: UI.COLORS.BLACK,
-            label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.cyclePlayerLogs),
-                textSize: 20,
-                textColor: UI.COLORS.GREEN,
-            },
-            onClick: async (player: mod.Player): Promise<void> => {
-                playerId = (playerId + 1) % 32;
-
-                const logLine = `P_${playerId} last log: ${playerLogs[playerId] && playerLogs[playerId].length > 0 ? playerLogs[playerId][playerLogs[playerId].length - 1] : 'No logs'}`;
-
-                staticLogger?.log(logLine, 4);
-            },
-        },
-        {
-            type: UI.Type.Button,
-            x: 0,
-            y: 100,
-            width: 300,
-            height: 20,
-            anchor: mod.UIAnchor.TopCenter,
-            bgColor: UI.COLORS.GREY_25,
-            baseColor: UI.COLORS.BLACK,
-            label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.printPlayerLogs),
-                textSize: 20,
-                textColor: UI.COLORS.GREEN,
-            },
-            onClick: async (player: mod.Player): Promise<void> => {
-                const lastLogIndex =
-                    playerLogs[playerId] && playerLogs[playerId].length > 0 ? playerLogs[playerId].length - 1 : -1;
-
-                staticLogger?.log(lastLogIndex >= 6 ? playerLogs[playerId][lastLogIndex - 6] : 'No logs', 6);
-                staticLogger?.log(lastLogIndex >= 5 ? playerLogs[playerId][lastLogIndex - 5] : 'No logs', 7);
-                staticLogger?.log(lastLogIndex >= 4 ? playerLogs[playerId][lastLogIndex - 4] : 'No logs', 8);
-                staticLogger?.log(lastLogIndex >= 3 ? playerLogs[playerId][lastLogIndex - 3] : 'No logs', 9);
-                staticLogger?.log(lastLogIndex >= 2 ? playerLogs[playerId][lastLogIndex - 2] : 'No logs', 10);
-                staticLogger?.log(lastLogIndex >= 1 ? playerLogs[playerId][lastLogIndex - 1] : 'No logs', 11);
-                staticLogger?.log(lastLogIndex >= 0 ? playerLogs[playerId][lastLogIndex] : 'No logs', 12);
-            },
-        },
-        {
-            type: UI.Type.Button,
-            x: 0,
             y: 120,
             width: 300,
             height: 20,
@@ -934,6 +918,76 @@ const DEBUG_MENU = {
         {
             type: UI.Type.Button,
             x: 0,
+            y: 180,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            bgColor: UI.COLORS.GREY_25,
+            baseColor: UI.COLORS.BLACK,
+            label: {
+                message: mod.Message(mod.stringkeys.debug.buttons.timeoutError),
+                textSize: 20,
+                textColor: UI.COLORS.GREEN,
+            },
+            onClick: async (player: mod.Player): Promise<void> => {
+                Timers.setTimeout(() => {
+                    throw new Error('My Timeout Error');
+                }, 3);
+            },
+        },
+        {
+            type: UI.Type.Button,
+            x: 0,
+            y: 200,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            bgColor: UI.COLORS.GREY_25,
+            baseColor: UI.COLORS.BLACK,
+            label: {
+                message: mod.Message(mod.stringkeys.debug.buttons.spawnVehicle),
+                textSize: 20,
+                textColor: UI.COLORS.GREEN,
+            },
+            onClick: async (player: mod.Player): Promise<void> => {
+                EASTWOOD_VEHICLE_SPAWNS.forEach((spawn) => {
+                    if (!spawn.spawner) return;
+
+                    mod.ForceVehicleSpawnerSpawn(spawn.spawner);
+
+                    dynamicLogger?.logAsync(`<BH> Vehicle spawner ${mod.GetObjId(spawn.spawner)} spawned a vehicle.`);
+                });
+            },
+        },
+        {
+            type: UI.Type.Button,
+            x: 0,
+            y: 220,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            bgColor: UI.COLORS.GREY_25,
+            baseColor: UI.COLORS.BLACK,
+            label: {
+                message: mod.Message(mod.stringkeys.debug.buttons.setupVehicleSpawners),
+                textSize: 20,
+                textColor: UI.COLORS.GREEN,
+            },
+            onClick: async (player: mod.Player): Promise<void> => {
+                EASTWOOD_VEHICLE_SPAWNS.forEach((spawn) => {
+                    if (!spawn.spawner) return;
+
+                    mod.SetVehicleSpawnerVehicleType(spawn.spawner, mod.VehicleList.GolfCart);
+                    mod.SetVehicleSpawnerAutoSpawn(spawn.spawner, true);
+                    mod.SetVehicleSpawnerRespawnTime(spawn.spawner, 10);
+
+                    dynamicLogger?.logAsync(`<BH> Vehicle spawner ${mod.GetObjId(spawn.spawner)} setup.`);
+                });
+            },
+        },
+        {
+            type: UI.Type.Button,
+            x: 0,
             y: 0,
             width: 300,
             height: 20,
@@ -962,15 +1016,28 @@ export function OngoingGlobal(): void {
 }
 
 export function OnGameModeStarted(): void {
+    mod.SetGameModeTimeLimit(20 * 60); // 20 minutes
+
     BountyHunter.initialize();
 
-    const { spawnData, spawnOptions } =
-        MapDetector.currentMap() == MapDetector.Map.EmpireState
-            ? { spawnData: EMPIRE_STATE_SPAWNS, spawnOptions: EMPIRE_STATE_FFA_SPAWNING_SOLDIER_OPTIONS }
-            : { spawnData: EASTWOOD_SPAWNS, spawnOptions: EASTWOOD_FFA_SPAWNING_SOLDIER_OPTIONS };
+    const ffaInitData = getSpawnDataAndInitializeOptions();
 
-    FFASpawning.Soldier.initialize(spawnData, spawnOptions);
+    if (!ffaInitData) return;
+
+    FFASpawning.Soldier.initialize(ffaInitData.spawnData, ffaInitData.spawnOptions);
     FFASpawning.Soldier.enableSpawnQueueProcessing();
+
+    if (MapDetector.currentMap() !== MapDetector.Map.Eastwood) return;
+
+    EASTWOOD_VEHICLE_SPAWNS.forEach((spawn) => {
+        createVehicleSpawner(spawn.position, spawn.orientation, mod.VehicleList.GolfCart, true, 10)
+            .then((spawner) => {
+                spawn.spawner = spawner;
+            })
+            .catch((error) => {
+                dynamicLogger?.logAsync(`<SCRIPT> Error creating vehicle spawner: ${error?.toString()}`);
+            });
+    });
 }
 
 export function OnTimeLimitReached(): void {
@@ -986,6 +1053,8 @@ export function OnTimeLimitReached(): void {
 }
 
 export function OngoingPlayer(eventPlayer: mod.Player): void {
+    if (!DEBUGGING) return;
+
     if (mod.GetObjId(eventPlayer) != 0) return;
 
     if (!InteractMultiClickDetector.checkMultiClick(eventPlayer)) return;
@@ -995,14 +1064,12 @@ export function OngoingPlayer(eventPlayer: mod.Player): void {
 }
 
 export function OnPlayerJoinGame(eventPlayer: mod.Player): void {
-    playerLogs[mod.GetObjId(eventPlayer)] = [`OnPlayerJoinGame started`];
-
     new BountyHunter(eventPlayer);
     const soldier = new FFASpawning.Soldier(eventPlayer);
 
     soldier.startDelayForPrompt();
 
-    playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerJoinGame completed`);
+    if (!DEBUGGING) return;
 
     if (mod.GetObjId(eventPlayer) != 0) return;
 
@@ -1022,12 +1089,13 @@ export function OnPlayerJoinGame(eventPlayer: mod.Player): void {
     });
 
     debugMenu = new UI.Container(DEBUG_MENU, eventPlayer);
-    performanceStats = new PerformanceStats({ log: (text: string) => dynamicLogger?.log(text) });
+    performanceStats = new PerformanceStats({ log: (text: string) => dynamicLogger?.logAsync(text) });
     performanceStats?.startHeartbeat();
 
-    const logger = (text: string) => dynamicLogger?.log(text);
+    const logger = (text: string) => dynamicLogger?.logAsync(text);
     FFASpawning.Soldier.setLogging(logger, FFASpawning.LogLevel.Info);
     PlayerUndeployFixer.setLogging(logger);
+    Timers.setLogging(logger);
 }
 
 export function OnPlayerDied(
@@ -1036,21 +1104,15 @@ export function OnPlayerDied(
     eventDeathType: mod.DeathType,
     eventWeaponUnlock: mod.WeaponUnlock
 ): void {
-    playerLogs[mod.GetObjId(victimPlayer)].push(`OnPlayerDied started`);
-
     BountyHunter.handleKill(killerPlayer, victimPlayer);
     PlayerUndeployFixer.playerDied(victimPlayer, (player: mod.Player) => OnPlayerUndeploy(player));
-
-    playerLogs[mod.GetObjId(victimPlayer)].push(`OnPlayerDied completed`);
 }
 
 export function OnPlayerUndeploy(eventPlayer: mod.Player): void {
-    playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerUndeploy started`);
-
     PlayerUndeployFixer.playerUndeployed(eventPlayer);
     FFASpawning.Soldier.startDelayForPrompt(eventPlayer);
 
-    playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerUndeploy completed`);
+    if (!DEBUGGING) return;
 
     if (mod.GetObjId(eventPlayer) != 0) return;
 
@@ -1064,11 +1126,9 @@ export function OnPlayerEarnedKillAssist(assisterPlayer: mod.Player, victimPlaye
 }
 
 export function OnPlayerDeployed(eventPlayer: mod.Player): void {
-    playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerDeployed started`);
-
     BountyHunter.handleDeployed(eventPlayer);
 
-    playerLogs[mod.GetObjId(eventPlayer)].push(`OnPlayerDeployed completed`);
+    if (!DEBUGGING) return;
 
     if (mod.GetObjId(eventPlayer) != 0) return;
 
@@ -1079,21 +1139,16 @@ function debug(player: mod.Player): void {
     mod.Wait(0.5).then(() => {
         if (!mod.GetSoldierState(player, mod.SoldierStateBool.IsAlive)) return;
 
-        staticLogger?.log(`Position: ${getPlayerStateVectorString(player, mod.SoldierStateVector.GetPosition)}`, 0);
-        staticLogger?.log(
+        staticLogger?.logAsync(
+            `Position: ${getPlayerStateVectorString(player, mod.SoldierStateVector.GetPosition)}`,
+            0
+        );
+        staticLogger?.logAsync(
             `Facing: ${getPlayerStateVectorString(player, mod.SoldierStateVector.GetFacingDirection)}`,
             1
         );
-        staticLogger?.log(`Tick Rate: ${performanceStats?.tickRate.toFixed(1)}Hz`, 2);
+        staticLogger?.logAsync(`Tick Rate: ${performanceStats?.tickRate.toFixed(1)}Hz`, 2);
 
         debug(player);
     });
-}
-
-function getPlayerStateVectorString(player: mod.Player, type: mod.SoldierStateVector): string {
-    return getVectorString(mod.GetSoldierState(player, type));
-}
-
-function getVectorString(vector: mod.Vector): string {
-    return `<${mod.XComponentOf(vector).toFixed(2)}, ${mod.YComponentOf(vector).toFixed(2)}, ${mod.ZComponentOf(vector).toFixed(2)}>`;
 }
