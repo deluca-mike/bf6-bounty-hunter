@@ -48,9 +48,10 @@ const EASTWOOD_SPAWNS: FFASpawning.SpawnData[] = [
 ];
 
 const EASTWOOD_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = {
-    minimumSafeDistance: 40,
-    maximumInterestingDistance: 80,
+    minimumSafeDistance: 60,
+    maximumInterestingDistance: 120,
     safeOverInterestingFallbackFactor: 1.5,
+    maxSpawnCandidates: 20,
 };
 
 const EMPIRE_STATE_SPAWNS: FFASpawning.SpawnData[] = [
@@ -147,9 +148,10 @@ const EMPIRE_STATE_SPAWNS: FFASpawning.SpawnData[] = [
 ];
 
 const EMPIRE_STATE_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = {
-    minimumSafeDistance: 20,
-    maximumInterestingDistance: 40,
+    minimumSafeDistance: 30,
+    maximumInterestingDistance: 60,
     safeOverInterestingFallbackFactor: 1.5,
+    maxSpawnCandidates: 20,
 };
 
 const DOWNTOWN_SPAWNS: FFASpawning.SpawnData[] = [
@@ -246,9 +248,10 @@ const DOWNTOWN_SPAWNS: FFASpawning.SpawnData[] = [
 ];
 
 const DOWNTOWN_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = {
-    minimumSafeDistance: 30,
-    maximumInterestingDistance: 60,
+    minimumSafeDistance: 40,
+    maximumInterestingDistance: 80,
     safeOverInterestingFallbackFactor: 1.5,
+    maxSpawnCandidates: 20,
 };
 
 const MARINA_SPAWNS: FFASpawning.SpawnData[] = [
@@ -311,9 +314,10 @@ const MARINA_SPAWNS: FFASpawning.SpawnData[] = [
 ];
 
 const MARINA_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = {
-    minimumSafeDistance: 30,
-    maximumInterestingDistance: 60,
+    minimumSafeDistance: 40,
+    maximumInterestingDistance: 80,
     safeOverInterestingFallbackFactor: 1.5,
+    maxSpawnCandidates: 20,
 };
 
 const AREA_22B_SPAWNS: FFASpawning.SpawnData[] = [
@@ -389,10 +393,15 @@ const AREA_22B_SPAWNS: FFASpawning.SpawnData[] = [
 ];
 
 const AREA_22B_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = {
-    minimumSafeDistance: 40,
-    maximumInterestingDistance: 80,
+    minimumSafeDistance: 50,
+    maximumInterestingDistance: 100,
     safeOverInterestingFallbackFactor: 1.5,
+    maxSpawnCandidates: 20,
 };
+
+function buildInitializeOptions(options: FFASpawning.InitializeOptions): FFASpawning.InitializeOptions {
+    return Object.assign({ initialPromptDelay: 3, promptDelay: 10 }, options);
+}
 
 export function getSpawnDataAndInitializeOptions():
     | { spawnData: FFASpawning.SpawnData[]; spawnOptions: FFASpawning.InitializeOptions }
@@ -402,35 +411,35 @@ export function getSpawnDataAndInitializeOptions():
     if (map == MapDetector.Map.EmpireState) {
         return {
             spawnData: EMPIRE_STATE_SPAWNS,
-            spawnOptions: EMPIRE_STATE_INITIALIZATION_OPTIONS,
+            spawnOptions: buildInitializeOptions(EMPIRE_STATE_INITIALIZATION_OPTIONS),
         };
     }
 
     if (map == MapDetector.Map.Eastwood) {
         return {
             spawnData: EASTWOOD_SPAWNS,
-            spawnOptions: EASTWOOD_INITIALIZATION_OPTIONS,
+            spawnOptions: buildInitializeOptions(EASTWOOD_INITIALIZATION_OPTIONS),
         };
     }
 
     if (map == MapDetector.Map.Downtown) {
         return {
             spawnData: DOWNTOWN_SPAWNS,
-            spawnOptions: DOWNTOWN_INITIALIZATION_OPTIONS,
+            spawnOptions: buildInitializeOptions(DOWNTOWN_INITIALIZATION_OPTIONS),
         };
     }
 
     if (map == MapDetector.Map.Marina) {
         return {
             spawnData: MARINA_SPAWNS,
-            spawnOptions: MARINA_INITIALIZATION_OPTIONS,
+            spawnOptions: buildInitializeOptions(MARINA_INITIALIZATION_OPTIONS),
         };
     }
 
     if (map == MapDetector.Map.Area22B) {
         return {
             spawnData: AREA_22B_SPAWNS,
-            spawnOptions: AREA_22B_INITIALIZATION_OPTIONS,
+            spawnOptions: buildInitializeOptions(AREA_22B_INITIALIZATION_OPTIONS),
         };
     }
 

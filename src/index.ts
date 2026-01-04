@@ -21,12 +21,15 @@ let dynamicLogger: Logger | undefined;
 let performanceStats: PerformanceStats | undefined;
 let debugMenu: UI.Container | undefined;
 
+// TODO: Leader is treated like having a flag-worthy streak.
+// TODO: Smaller combat zones or dynamic combat zones.
+
 // TODO: Assists
 // TODO: Refresh/clear scoreboard of leavers.
 class BountyHunter {
     // ---- Private Static Constants ---- //
 
-    private static readonly _TARGET_POINTS: number = 250;
+    private static readonly _TARGET_POINTS: number = 400;
 
     private static readonly _BASE_KILL_POINTS: number = 10;
 
@@ -198,7 +201,8 @@ class BountyHunter {
 
     private static _updateBigBounties(player: mod.Player, bounty: number, position: mod.Vector): void {
         if (bounty < this._BIG_BOUNTY_THRESHOLD) {
-            this._BIG_BOUNTIES.delete(mod.GetObjId(player));
+            // Try to delete the big bounty, but if it didn't exist, return so we don't force UI updates.
+            if (!this._BIG_BOUNTIES.delete(mod.GetObjId(player))) return;
         } else {
             this._BIG_BOUNTIES.set(mod.GetObjId(player), { bounty, position });
         }
@@ -415,7 +419,7 @@ class BountyHunter {
         const bounty = this._getBounty(victimKillStreak);
 
         if (victimPlayer && bounty >= this._BIG_BOUNTY_THRESHOLD) {
-            this._updateBigBounties(victimPlayer, 0, mod.CreateVector(0, 0, 0)); // TODO: Perhaps position should be undefined.
+            this._updateBigBounties(victimPlayer, 0, this._ZERO_VECTOR);
         }
 
         if (victimIsValid) {
@@ -746,7 +750,7 @@ class BountyHunter {
         this._awardUI?.delete();
         this._bigBountiesUI?.delete();
 
-        BountyHunter._updateBigBounties(this._player, 0, mod.CreateVector(0, 0, 0)); // TODO: Perhaps position should be undefined.
+        BountyHunter._updateBigBounties(this._player, 0, BountyHunter._ZERO_VECTOR); // TODO: Perhaps position should be undefined.
 
         delete BountyHunter._ALL_BOUNTY_HUNTERS[this._playerId];
 
@@ -913,76 +917,6 @@ const DEBUG_MENU = {
             },
             onClick: async (player: mod.Player): Promise<void> => {
                 BountyHunter.handleKill(mod.ValueInArray(mod.AllPlayers(), 20));
-            },
-        },
-        {
-            type: UI.Type.Button,
-            x: 0,
-            y: 180,
-            width: 300,
-            height: 20,
-            anchor: mod.UIAnchor.TopCenter,
-            bgColor: UI.COLORS.GREY_25,
-            baseColor: UI.COLORS.BLACK,
-            label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.timeoutError),
-                textSize: 20,
-                textColor: UI.COLORS.GREEN,
-            },
-            onClick: async (player: mod.Player): Promise<void> => {
-                Timers.setTimeout(() => {
-                    throw new Error('My Timeout Error');
-                }, 3);
-            },
-        },
-        {
-            type: UI.Type.Button,
-            x: 0,
-            y: 200,
-            width: 300,
-            height: 20,
-            anchor: mod.UIAnchor.TopCenter,
-            bgColor: UI.COLORS.GREY_25,
-            baseColor: UI.COLORS.BLACK,
-            label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.spawnVehicle),
-                textSize: 20,
-                textColor: UI.COLORS.GREEN,
-            },
-            onClick: async (player: mod.Player): Promise<void> => {
-                EASTWOOD_VEHICLE_SPAWNS.forEach((spawn) => {
-                    if (!spawn.spawner) return;
-
-                    mod.ForceVehicleSpawnerSpawn(spawn.spawner);
-
-                    dynamicLogger?.logAsync(`<BH> Vehicle spawner ${mod.GetObjId(spawn.spawner)} spawned a vehicle.`);
-                });
-            },
-        },
-        {
-            type: UI.Type.Button,
-            x: 0,
-            y: 220,
-            width: 300,
-            height: 20,
-            anchor: mod.UIAnchor.TopCenter,
-            bgColor: UI.COLORS.GREY_25,
-            baseColor: UI.COLORS.BLACK,
-            label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.setupVehicleSpawners),
-                textSize: 20,
-                textColor: UI.COLORS.GREEN,
-            },
-            onClick: async (player: mod.Player): Promise<void> => {
-                EASTWOOD_VEHICLE_SPAWNS.forEach((spawn) => {
-                    if (!spawn.spawner) return;
-
-                    mod.SetVehicleSpawnerVehicleType(spawn.spawner, mod.VehicleList.GolfCart);
-                    mod.SetVehicleSpawnerAutoSpawn(spawn.spawner, true);
-                    mod.SetVehicleSpawnerRespawnTime(spawn.spawner, 10);
-
-                    dynamicLogger?.logAsync(`<BH> Vehicle spawner ${mod.GetObjId(spawn.spawner)} setup.`);
-                });
             },
         },
         {

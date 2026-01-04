@@ -44,9 +44,6 @@
             "clearDynamicLogs": "Clear Dynamic Logs",
             "giveAIKill10": "Give AI 10 Kill",
             "giveAIKill20": "Give AI 20 Kill",
-            "timeoutError": "Timeout Error",
-            "spawnVehicle": "Spawn Vehicle",
-            "setupVehicleSpawners": "Setup Vehicle Spawners",
             "close": "Close"
         }
     }

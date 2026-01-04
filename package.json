@@ -29,7 +29,7 @@
         "@typescript-eslint/parser": "^8.50.0",
         "bf6-portal-bundler": "^1.1.0",
         "bf6-portal-mod-types": "^1.1.3",
-        "bf6-portal-utils": "^3.0.0",
+        "bf6-portal-utils": "^4.0.0",
         "eslint": "^9.39.1",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-prettier": "^5.5.4",
