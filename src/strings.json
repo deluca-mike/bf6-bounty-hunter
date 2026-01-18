@@ -2,11 +2,17 @@
     "bountyHunter": {
         "hud": {
             "killStreak": "Streak: {}        Bounty on your head: {} PTS",
-            "spotted": "Spotted {} seconds on / {} seconds off",
-            "notSpotted": "Not Spotted",
+            "spotted": "Auto-Spotted {}s on / {}s off",
+            "notSpotted": "Not Auto-Spotted",
             "award": "+ {} PTS",
             "killLog": "Ended {}'s {}-kill streak (+ {} PTS)",
             "assistLog": "Helped end {}'s {}-kill streak (+ {} PTS)",
+            "scavengerLog": "+ Scavenged ammo crate",
+            "callInLogs": {
+                "uav": "+ UAV call-in awarded",
+                "artilleryStrike": "+ Artillery Strike call-in awarded",
+                "smokeScreen": "+ Smoke Screen call-in awarded"
+            },
             "bigBounty": {
                 "points": "{} PT Bounty",
                 "headingN": "{}m N",
@@ -37,13 +43,10 @@
         "buttons": {
             "toggleStaticLogger": "Toggle Static Logger",
             "toggleDynamicLogger": "Toggle Dynamic Logger",
-            "giveKill": "Give Kill",
-            "giveAssist": "Give Assist",
-            "cyclePlayerLogs": "Cycle Player Logs",
-            "printPlayerLogs": "Print Player Logs",
             "clearDynamicLogs": "Clear Dynamic Logs",
             "giveAIKill10": "Give AI 10 Kill",
             "giveAIKill20": "Give AI 20 Kill",
+            "spawnHelicopter": "Spawn Helicopter",
             "close": "Close"
         }
     }

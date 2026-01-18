@@ -1,13 +1,14 @@
 import { FFASpawning } from 'bf6-portal-utils/ffa-spawning/index.ts';
 import { InteractMultiClickDetector } from 'bf6-portal-utils/interact-multi-click-detector/index.ts';
 import { Logger } from 'bf6-portal-utils/logger/index.ts';
-import { PerformanceStats } from 'bf6-portal-utils/performance-stats/index.ts';
 import { Sounds } from 'bf6-portal-utils/sounds/index.ts';
 import { UI } from 'bf6-portal-utils/ui/index.ts';
 import { MapDetector } from 'bf6-portal-utils/map-detector/index.ts';
+import { Timers } from 'bf6-portal-utils/timers/index.ts';
 
+import { Scavenger } from './scavenger/index.ts';
 import { PlayerUndeployFixer } from './utils/player-undeploy-fixer.ts';
-import { Timers } from './utils/timers.ts';
+import { DropInSpawning } from './dropin-spawning/index.ts';
 import { createVehicleSpawner } from './utils/vehicle-spawner.ts';
 
 import { getPlayerStateVectorString } from './helpers/index.ts';
@@ -18,16 +19,29 @@ const DEBUGGING = false;
 
 let staticLogger: Logger | undefined;
 let dynamicLogger: Logger | undefined;
-let performanceStats: PerformanceStats | undefined;
 let debugMenu: UI.Container | undefined;
+let spawnType: 'ffa' | 'dropin' = 'ffa';
+
+type AwardSounds = ({ sfxAsset: mod.RuntimeSpawn_Common; amplitude: number } | undefined)[];
+
+type KillStreakCallInRewards = { [killStreak: number]: { gadget: mod.Gadgets; message: mod.Message } };
 
 // TODO: Leader is treated like having a flag-worthy streak.
 // TODO: Smaller combat zones or dynamic combat zones.
+// TODO: Microtask more of the UI, like Big Bounties.
 
 // TODO: Assists
 // TODO: Refresh/clear scoreboard of leavers.
 class BountyHunter {
     // ---- Private Static Constants ---- //
+
+    private static readonly _NOT_SPOTTED_MESSAGE = mod.Message(mod.stringkeys.bountyHunter.hud.notSpotted);
+
+    private static readonly _SCAVENGER_LOG_MESSAGE = mod.Message(mod.stringkeys.bountyHunter.hud.scavengerLog);
+
+    private static readonly _UNKNOWN_HEADING_MESSAGE = mod.Message(
+        mod.stringkeys.bountyHunter.hud.bigBounty.unknownHeading
+    );
 
     private static readonly _TARGET_POINTS: number = 400;
 
@@ -37,40 +51,43 @@ class BountyHunter {
 
     private static readonly _MAX_BIG_BOUNTIES: number = 3;
 
+    // In milliseconds.
     private static readonly _SPOTTING_DURATIONS: number[] = [
         0, // 0
         0, // 1
         0, // 2
         0, // 3
-        5, // 4
-        10, // 5
-        15, // 6
-        20, // 7
-        29, // 8
+        5_000, // 4
+        10_000, // 5
+        15_000, // 6
+        20_000, // 7
+        29_000, // 8
     ];
 
+    // In milliseconds.
     private static readonly _STREAK_SPOTTING_DELAYS: number[] = [
         0, // 0
         0, // 1
         0, // 2
         0, // 3
-        25, // 4
-        20, // 5
-        15, // 6
-        10, // 7
-        1, // 8
+        25_000, // 4
+        20_000, // 5
+        15_000, // 6
+        10_000, // 7
+        1_000, // 8
     ];
 
+    // In milliseconds.
     private static readonly _STREAK_FLAGGING_DELAYS: number[] = [
         0, // 0
         0, // 1
         0, // 2
         0, // 3
         0, // 4
-        16, // 5
-        8, // 6
-        4, // 7
-        2, // 8
+        16_000, // 5
+        8_000, // 6
+        4_000, // 7
+        2_000, // 8
     ];
 
     private static readonly _BOUNTY_MULTIPLIERS: number[] = [
@@ -87,7 +104,7 @@ class BountyHunter {
         8, // 10
     ];
 
-    private static readonly _AWARD_SOUNDS: ({ sfxAsset: mod.RuntimeSpawn_Common; amplitude: number } | undefined)[] = [
+    private static readonly _AWARD_SOUNDS: AwardSounds = [
         { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_EOR_MasteryRankUp_OneShot2D, amplitude: 3 }, // 0
         { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_EOR_MasteryRankUp_OneShot2D, amplitude: 3 }, // 1
         { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_EOR_MasteryRankUp_OneShot2D, amplitude: 3 }, // 2
@@ -112,29 +129,57 @@ class BountyHunter {
         { sfxAsset: mod.RuntimeSpawn_Common.SFX_UI_Notification_SidePanel_Mastery_OneShot2D, amplitude: 2 }, // 9
     ];
 
+    private static readonly _KILL_STREAK_CALLIN_REWARDS: KillStreakCallInRewards = {
+        3: {
+            gadget: mod.Gadgets.CallIn_UAV_Overwatch,
+            message: mod.Message(mod.stringkeys.bountyHunter.hud.callInLogs.uav),
+        },
+        6: {
+            gadget: mod.Gadgets.CallIn_Artillery_Strike,
+            message: mod.Message(mod.stringkeys.bountyHunter.hud.callInLogs.artilleryStrike),
+        },
+        9: {
+            gadget: mod.Gadgets.CallIn_Smoke_Screen,
+            message: mod.Message(mod.stringkeys.bountyHunter.hud.callInLogs.smokeScreen),
+        },
+        12: {
+            gadget: mod.Gadgets.CallIn_UAV_Overwatch,
+            message: mod.Message(mod.stringkeys.bountyHunter.hud.callInLogs.uav),
+        },
+        15: {
+            gadget: mod.Gadgets.CallIn_Smoke_Screen,
+            message: mod.Message(mod.stringkeys.bountyHunter.hud.callInLogs.smokeScreen),
+        },
+        18: {
+            gadget: mod.Gadgets.CallIn_UAV_Overwatch,
+            message: mod.Message(mod.stringkeys.bountyHunter.hud.callInLogs.uav),
+        },
+    };
+
     private static readonly _ZERO_VECTOR: mod.Vector = mod.CreateVector(0, 0, 0);
 
     private static readonly _WORLD_ICON_OFFSET: mod.Vector = mod.CreateVector(0, 3, 0);
 
-    private static readonly _AWARD_DURATION: number = 2;
+    private static readonly _AWARD_DURATION: number = 2; // In seconds.
 
     private static readonly _ALL_BOUNTY_HUNTERS: { [playerId: number]: BountyHunter } = {};
 
     private static readonly _BIG_BOUNTIES: Map<number, { bounty: number; position: mod.Vector }> = new Map();
 
-    private static readonly _SELF_INFO_CONTAINER_PARAMS: UI.ContainerParams = {
-        x: 0,
-        y: 0,
-        width: 450,
-        height: 120,
-        anchor: mod.UIAnchor.TopCenter,
-        bgColor: UI.COLORS.BF_GREY_4,
-        bgAlpha: 0.75,
-        bgFill: mod.UIBgFill.Blur,
-        depth: mod.UIDepth.BelowGameUI,
-    };
-
     // ---- Private Static Methods ---- //
+
+    private static _getSelfInfoContainerParams(player: mod.Player): UI.ContainerParams {
+        return {
+            width: 450,
+            height: 130,
+            anchor: mod.UIAnchor.TopCenter,
+            bgColor: UI.COLORS.BF_GREY_4,
+            bgAlpha: 0.75,
+            bgFill: mod.UIBgFill.Blur,
+            depth: mod.UIDepth.BelowGameUI,
+            receiver: player,
+        };
+    }
 
     private static _getKillStreakMessage(killStreak: number): mod.Message {
         return mod.Message(mod.stringkeys.bountyHunter.hud.killStreak, killStreak, this._getBounty(killStreak));
@@ -145,8 +190,8 @@ class BountyHunter {
         const delay = this._getSpottingDelay(killStreak);
 
         return !duration || !delay
-            ? mod.Message(mod.stringkeys.bountyHunter.hud.notSpotted)
-            : mod.Message(mod.stringkeys.bountyHunter.hud.spotted, duration, delay);
+            ? this._NOT_SPOTTED_MESSAGE
+            : mod.Message(mod.stringkeys.bountyHunter.hud.spotted, duration / 1_000, delay / 1_000);
     }
 
     private static _getSpottingDuration(killStreak: number): number {
@@ -224,8 +269,7 @@ class BountyHunter {
 
     private static _getKillStreakUIParams(parent: UI.Container): UI.TextParams {
         return {
-            x: 0,
-            y: 60,
+            y: 70,
             width: 400,
             height: 20,
             anchor: mod.UIAnchor.TopCenter,
@@ -238,8 +282,7 @@ class BountyHunter {
 
     private static _getSpottedUIParams(parent: UI.Container): UI.TextParams {
         return {
-            x: 0,
-            y: 90,
+            y: 100,
             width: 400,
             height: 20,
             anchor: mod.UIAnchor.TopCenter,
@@ -250,9 +293,8 @@ class BountyHunter {
         };
     }
 
-    private static _getAwardUIParams(): UI.TextParams {
+    private static _getAwardUIParams(player: mod.Player): UI.TextParams {
         return {
-            x: 0,
             y: -100,
             width: 100,
             height: 32,
@@ -265,6 +307,7 @@ class BountyHunter {
             textColor: UI.COLORS.BF_GREEN_BRIGHT,
             textAlpha: 0.5,
             visible: false,
+            receiver: player,
         };
     }
 
@@ -274,22 +317,22 @@ class BountyHunter {
         anchor: mod.UIAnchor,
         message: mod.Message,
         textColor: mod.Vector
-    ): UI.TextParams {
+    ): UI.ChildParams<UI.TextParams> {
         return {
-            type: UI.Type.Text,
+            type: UI.Text,
             x,
             width,
             height: 20,
             anchor,
-            message: message,
+            message,
             textSize: 14,
             textColor,
             textAnchor: anchor,
         };
     }
 
-    private static _getBigBountyRowUIParams(y: number): UI.ContainerParams {
-        const childrenParams: UI.TextParams[] = [
+    private static _getBigBountyRowUIParams(y: number): UI.ChildParams<UI.ContainerParams> {
+        const childrenParams = [
             this._getBigBountyTextUIParams(
                 3,
                 90,
@@ -301,15 +344,15 @@ class BountyHunter {
                 88,
                 60,
                 mod.UIAnchor.CenterLeft,
-                mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.unknownHeading),
+                this._UNKNOWN_HEADING_MESSAGE,
                 UI.COLORS.WHITE
             ),
             this._getBigBountyTextUIParams(3, 200, mod.UIAnchor.CenterRight, mod.Message(0), UI.COLORS.BF_RED_BRIGHT),
         ];
 
         return {
-            type: UI.Type.Container,
-            y: y,
+            type: UI.Container,
+            y,
             width: 294,
             height: 24,
             anchor: mod.UIAnchor.BottomLeft,
@@ -321,10 +364,10 @@ class BountyHunter {
         };
     }
 
-    private static _getBigBountyUIParams(): UI.ContainerParams {
-        const childrenParams: UI.ContainerParams[] = Array(this._MAX_BIG_BOUNTIES)
-            .fill({})
-            .map((_, index) => this._getBigBountyRowUIParams(index * (20 + 4)));
+    private static _getBigBountyUIParams(player: mod.Player): UI.ContainerParams {
+        const childrenParams = Array.from({ length: this._MAX_BIG_BOUNTIES }, (_, index) =>
+            this._getBigBountyRowUIParams(index * (20 + 4))
+        );
 
         return {
             x: 32,
@@ -335,6 +378,7 @@ class BountyHunter {
             depth: mod.UIDepth.AboveGameUI,
             childrenParams: childrenParams,
             visible: false,
+            receiver: player,
         };
     }
 
@@ -348,7 +392,7 @@ class BountyHunter {
     }
 
     private static _getDistanceMessage(bountyPosition: mod.Vector, position?: mod.Vector): mod.Message {
-        if (!position) return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.unknownHeading);
+        if (!position) return this._UNKNOWN_HEADING_MESSAGE;
 
         const heading = this._getHeading(position, bountyPosition);
         const distance = ~~mod.DistanceBetween(position, bountyPosition);
@@ -362,6 +406,11 @@ class BountyHunter {
         if (heading < 292.5) return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.headingW, distance);
         if (heading < 337.5) return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.headingNW, distance);
         return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.headingN, distance);
+    }
+
+    private static _awardScavenger(player: mod.Player): void {
+        mod.DisplayHighlightedWorldLogMessage(this._SCAVENGER_LOG_MESSAGE, player);
+        mod.Resupply(player, mod.ResupplyTypes.AmmoCrate);
     }
 
     // ---- Public Static Methods ---- //
@@ -415,6 +464,11 @@ class BountyHunter {
         const killer = this.getFromPlayer(killerPlayer);
         const victim = victimPlayer && this.getFromPlayer(victimPlayer);
         const victimIsValid = victim && !victim._deleteIfNotValid();
+
+        if (victimIsValid) {
+            Scavenger.createDrop(victimPlayer, (player: mod.Player) => this._awardScavenger(player));
+        }
+
         const victimKillStreak = victim?._killStreak ?? 0; // This needs to be captured before the victim's kill streak is reset.
         const bounty = this._getBounty(victimKillStreak);
 
@@ -554,12 +608,11 @@ class BountyHunter {
             return;
         }
 
-        const selfInfoContainer = new UI.Container(BountyHunter._SELF_INFO_CONTAINER_PARAMS, player);
-
-        this._killStreakUI = new UI.Text(BountyHunter._getKillStreakUIParams(selfInfoContainer), player);
-        this._spottedUI = new UI.Text(BountyHunter._getSpottedUIParams(selfInfoContainer), player);
-        this._awardUI = new UI.Text(BountyHunter._getAwardUIParams(), player);
-        this._bigBountiesUI = new UI.Container(BountyHunter._getBigBountyUIParams(), player);
+        this._selfInfoContainer = new UI.Container(BountyHunter._getSelfInfoContainerParams(player));
+        this._killStreakUI = new UI.Text(BountyHunter._getKillStreakUIParams(this._selfInfoContainer));
+        this._spottedUI = new UI.Text(BountyHunter._getSpottedUIParams(this._selfInfoContainer));
+        this._awardUI = new UI.Text(BountyHunter._getAwardUIParams(player));
+        this._bigBountiesUI = new UI.Container(BountyHunter._getBigBountyUIParams(player));
     }
 
     // ---- Private Variables ---- //
@@ -567,6 +620,8 @@ class BountyHunter {
     private _player: mod.Player;
 
     private _playerId: number;
+
+    private _selfInfoContainer?: UI.Container;
 
     private _killStreakUI?: UI.Text;
 
@@ -637,7 +692,7 @@ class BountyHunter {
 
         mod.SpotTarget(this._player, duration, mod.SpotStatus.SpotInBoth);
 
-        dynamicLogger?.logAsync(`<BH> Spotting P_${this._playerId} for ${duration}s.`);
+        dynamicLogger?.logAsync(`<BH> Spotting P_${this._playerId} for ${duration / 1_000}s.`);
     }
 
     private _getFlag(bounty: number): mod.WorldIcon {
@@ -676,32 +731,43 @@ class BountyHunter {
     }
 
     private _awardBounty(victimKillStreak: number, bounty: number): void {
+        this._points += bounty;
+
+        if (this._isAI) return;
+
         const sound = BountyHunter._getAwardSound(victimKillStreak);
 
         if (sound) {
             Sounds.play2D(sound.sfxAsset, { duration: 5, player: this._player, amplitude: sound.amplitude });
         }
 
-        this._points += bounty;
-
-        if (!this._awardUI) return;
-
-        this._awardUI.setMessage(BountyHunter._getAwardMessage(bounty));
-        this._awardUI.show();
+        this._awardUI?.setMessage(BountyHunter._getAwardMessage(bounty)).show();
 
         mod.Wait(BountyHunter._AWARD_DURATION).then(() => this._awardUI?.hide());
     }
 
     private _setKillStreak(killStreak: number): void {
         this._killStreak = killStreak;
+
+        if (this._isAI) return;
+
         this._killStreakUI?.setMessage(BountyHunter._getKillStreakMessage(killStreak));
         this._spottedUI?.setMessage(BountyHunter._getSpottedMessage(killStreak));
+
+        const callIn = BountyHunter._KILL_STREAK_CALLIN_REWARDS[killStreak];
+
+        if (!callIn) return;
+
+        mod.AddEquipment(this._player, callIn.gadget);
+        mod.DisplayHighlightedWorldLogMessage(callIn.message, this._player);
     }
 
-    private _updateBigBountiesUI(
+    private async _updateBigBountiesUI(
         bigBounties: { bountyHunter: BountyHunter; bounty: number; position: mod.Vector }[]
-    ): void {
+    ): Promise<void> {
         if (this._isAI) return;
+
+        await Promise.resolve(); // Send the rest of the code to the microtask queue.
 
         const position = mod.GetSoldierState(this._player, mod.SoldierStateBool.IsAlive)
             ? mod.GetSoldierState(this._player, mod.SoldierStateVector.GetPosition)
@@ -745,8 +811,7 @@ class BountyHunter {
         this._stopFlagging();
         Timers.clearInterval(this._spottingIntervalId);
         this._killStreak = 0;
-        this._killStreakUI?.delete();
-        this._spottedUI?.delete();
+        this._selfInfoContainer?.delete();
         this._awardUI?.delete();
         this._bigBountiesUI?.delete();
 
@@ -792,9 +857,10 @@ const DEBUG_MENU = {
     bgColor: UI.COLORS.BLACK,
     bgAlpha: 0.5,
     visible: false,
+    uiInputModeWhenVisible: true,
     childrenParams: [
         {
-            type: UI.Type.Button,
+            type: UI.TextButton,
             x: 0,
             y: 0,
             width: 300,
@@ -802,17 +868,15 @@ const DEBUG_MENU = {
             anchor: mod.UIAnchor.TopCenter,
             bgColor: UI.COLORS.GREY_25,
             baseColor: UI.COLORS.BLACK,
-            label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.toggleStaticLogger),
-                textSize: 20,
-                textColor: UI.COLORS.GREEN,
-            },
+            message: mod.Message(mod.stringkeys.debug.buttons.toggleStaticLogger),
+            textSize: 20,
+            textColor: UI.COLORS.GREEN,
             onClick: async (player: mod.Player): Promise<void> => {
                 staticLogger?.toggle();
             },
-        },
+        } as UI.ChildParams<UI.TextButtonParams>,
         {
-            type: UI.Type.Button,
+            type: UI.TextButton,
             x: 0,
             y: 20,
             width: 300,
@@ -820,17 +884,15 @@ const DEBUG_MENU = {
             anchor: mod.UIAnchor.TopCenter,
             bgColor: UI.COLORS.GREY_25,
             baseColor: UI.COLORS.BLACK,
-            label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.toggleDynamicLogger),
-                textSize: 20,
-                textColor: UI.COLORS.GREEN,
-            },
+            message: mod.Message(mod.stringkeys.debug.buttons.toggleDynamicLogger),
+            textSize: 20,
+            textColor: UI.COLORS.GREEN,
             onClick: async (player: mod.Player): Promise<void> => {
                 dynamicLogger?.toggle();
             },
-        },
+        } as UI.ChildParams<UI.TextButtonParams>,
         {
-            type: UI.Type.Button,
+            type: UI.TextButton,
             x: 0,
             y: 40,
             width: 300,
@@ -838,17 +900,15 @@ const DEBUG_MENU = {
             anchor: mod.UIAnchor.TopCenter,
             bgColor: UI.COLORS.GREY_25,
             baseColor: UI.COLORS.BLACK,
-            label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.giveKill),
-                textSize: 20,
-                textColor: UI.COLORS.GREEN,
-            },
+            message: mod.Message(mod.stringkeys.debug.buttons.clearDynamicLogs),
+            textSize: 20,
+            textColor: UI.COLORS.GREEN,
             onClick: async (player: mod.Player): Promise<void> => {
-                BountyHunter.handleKill(player);
+                dynamicLogger?.clear();
             },
-        },
+        } as UI.ChildParams<UI.TextButtonParams>,
         {
-            type: UI.Type.Button,
+            type: UI.TextButton,
             x: 0,
             y: 60,
             width: 300,
@@ -856,71 +916,53 @@ const DEBUG_MENU = {
             anchor: mod.UIAnchor.TopCenter,
             bgColor: UI.COLORS.GREY_25,
             baseColor: UI.COLORS.BLACK,
-            label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.giveAssist),
-                textSize: 20,
-                textColor: UI.COLORS.GREEN,
-            },
-            onClick: async (player: mod.Player): Promise<void> => {
-                BountyHunter.handleAssist(player);
-            },
-        },
-        {
-            type: UI.Type.Button,
-            x: 0,
-            y: 120,
-            width: 300,
-            height: 20,
-            anchor: mod.UIAnchor.TopCenter,
-            bgColor: UI.COLORS.GREY_25,
-            baseColor: UI.COLORS.BLACK,
-            label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.clearDynamicLogs),
-                textSize: 20,
-                textColor: UI.COLORS.GREEN,
-            },
-            onClick: async (player: mod.Player): Promise<void> => {
-                dynamicLogger?.clear();
-            },
-        },
-        {
-            type: UI.Type.Button,
-            x: 0,
-            y: 140,
-            width: 300,
-            height: 20,
-            anchor: mod.UIAnchor.TopCenter,
-            bgColor: UI.COLORS.GREY_25,
-            baseColor: UI.COLORS.BLACK,
-            label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.giveAIKill10),
-                textSize: 20,
-                textColor: UI.COLORS.GREEN,
-            },
+            message: mod.Message(mod.stringkeys.debug.buttons.giveAIKill10),
+            textSize: 20,
+            textColor: UI.COLORS.GREEN,
             onClick: async (player: mod.Player): Promise<void> => {
                 BountyHunter.handleKill(mod.ValueInArray(mod.AllPlayers(), 10));
             },
-        },
+        } as UI.ChildParams<UI.TextButtonParams>,
         {
-            type: UI.Type.Button,
+            type: UI.TextButton,
             x: 0,
-            y: 160,
+            y: 80,
             width: 300,
             height: 20,
             anchor: mod.UIAnchor.TopCenter,
             bgColor: UI.COLORS.GREY_25,
             baseColor: UI.COLORS.BLACK,
-            label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.giveAIKill20),
-                textSize: 20,
-                textColor: UI.COLORS.GREEN,
-            },
+            message: mod.Message(mod.stringkeys.debug.buttons.giveAIKill20),
+            textSize: 20,
+            textColor: UI.COLORS.GREEN,
             onClick: async (player: mod.Player): Promise<void> => {
                 BountyHunter.handleKill(mod.ValueInArray(mod.AllPlayers(), 20));
             },
-        },
+        } as UI.ChildParams<UI.TextButtonParams>,
         {
-            type: UI.Type.Button,
+            type: UI.TextButton,
+            x: 0,
+            y: 100,
+            width: 300,
+            height: 20,
+            anchor: mod.UIAnchor.TopCenter,
+            bgColor: UI.COLORS.GREY_25,
+            baseColor: UI.COLORS.BLACK,
+            message: mod.Message(mod.stringkeys.debug.buttons.spawnHelicopter),
+            textSize: 20,
+            textColor: UI.COLORS.GREEN,
+            onClick: async (player: mod.Player): Promise<void> => {
+                await createVehicleSpawner(
+                    mod.GetSoldierState(player, mod.SoldierStateVector.GetPosition),
+                    0,
+                    mod.VehicleList.AH64,
+                    true,
+                    10
+                );
+            },
+        } as UI.ChildParams<UI.TextButtonParams>,
+        {
+            type: UI.TextButton,
             x: 0,
             y: 0,
             width: 300,
@@ -928,25 +970,18 @@ const DEBUG_MENU = {
             anchor: mod.UIAnchor.BottomCenter,
             bgColor: UI.COLORS.GREY_25,
             baseColor: UI.COLORS.BLACK,
-            label: {
-                message: mod.Message(mod.stringkeys.debug.buttons.close),
-                textSize: 20,
-                textColor: UI.COLORS.GREEN,
-            },
+            message: mod.Message(mod.stringkeys.debug.buttons.close),
+            textSize: 20,
+            textColor: UI.COLORS.GREEN,
             onClick: async (player: mod.Player): Promise<void> => {
-                mod.EnableUIInputMode(false, player);
                 debugMenu?.hide();
             },
-        },
+        } as UI.ChildParams<UI.TextButtonParams>,
     ],
 };
 
 export function OnPlayerUIButtonEvent(player: mod.Player, widget: mod.UIWidget, event: mod.UIButtonEvent): void {
-    UI.handleButtonClick(player, widget, event);
-}
-
-export function OngoingGlobal(): void {
-    performanceStats?.trackTick();
+    UI.handleButtonEvent(player, widget, event);
 }
 
 export function OnGameModeStarted(): void {
@@ -954,12 +989,20 @@ export function OnGameModeStarted(): void {
 
     BountyHunter.initialize();
 
-    const ffaInitData = getSpawnDataAndInitializeOptions();
+    const spawnInitData = getSpawnDataAndInitializeOptions();
 
-    if (!ffaInitData) return;
-
-    FFASpawning.Soldier.initialize(ffaInitData.spawnData, ffaInitData.spawnOptions);
-    FFASpawning.Soldier.enableSpawnQueueProcessing();
+    if (spawnInitData.spawnData) {
+        FFASpawning.Soldier.initialize(spawnInitData.spawnData, spawnInitData.spawnOptions);
+        FFASpawning.Soldier.enableSpawnQueueProcessing();
+        spawnType = 'ffa';
+    } else if (spawnInitData.dropInData) {
+        DropInSpawning.Soldier.initialize(spawnInitData.dropInData, spawnInitData.spawnOptions);
+        DropInSpawning.Soldier.enableSpawnQueueProcessing();
+        spawnType = 'dropin';
+    } else {
+        dynamicLogger?.logAsync(`<SCRIPT> No spawn data or drop in data found.`);
+        return;
+    }
 
     if (MapDetector.currentMap() !== MapDetector.Map.Eastwood) return;
 
@@ -994,18 +1037,23 @@ export function OngoingPlayer(eventPlayer: mod.Player): void {
     if (!InteractMultiClickDetector.checkMultiClick(eventPlayer)) return;
 
     debugMenu?.show();
-    mod.EnableUIInputMode(true, eventPlayer);
 }
 
 export function OnPlayerJoinGame(eventPlayer: mod.Player): void {
+    const playerId = mod.GetObjId(eventPlayer);
+
     new BountyHunter(eventPlayer);
-    const soldier = new FFASpawning.Soldier(eventPlayer);
+
+    const soldier =
+        spawnType === 'ffa'
+            ? new FFASpawning.Soldier(eventPlayer, DEBUGGING && playerId === 0)
+            : new DropInSpawning.Soldier(eventPlayer, DEBUGGING && playerId === 0);
 
     soldier.startDelayForPrompt();
 
     if (!DEBUGGING) return;
 
-    if (mod.GetObjId(eventPlayer) != 0) return;
+    if (playerId !== 0) return;
 
     staticLogger = new Logger(eventPlayer, {
         staticRows: true,
@@ -1022,14 +1070,18 @@ export function OnPlayerJoinGame(eventPlayer: mod.Player): void {
         height: 800,
     });
 
-    debugMenu = new UI.Container(DEBUG_MENU, eventPlayer);
-    performanceStats = new PerformanceStats({ log: (text: string) => dynamicLogger?.logAsync(text) });
-    performanceStats?.startHeartbeat();
+    debugMenu = new UI.Container({ ...DEBUG_MENU, receiver: eventPlayer });
 
     const logger = (text: string) => dynamicLogger?.logAsync(text);
-    FFASpawning.Soldier.setLogging(logger, FFASpawning.LogLevel.Info);
     PlayerUndeployFixer.setLogging(logger);
     Timers.setLogging(logger);
+    Scavenger.setLogging(logger);
+
+    if (spawnType === 'ffa') {
+        FFASpawning.Soldier.setLogging(logger, FFASpawning.LogLevel.Info);
+    } else {
+        DropInSpawning.Soldier.setLogging(logger, DropInSpawning.LogLevel.Info);
+    }
 }
 
 export function OnPlayerDied(
@@ -1044,7 +1096,12 @@ export function OnPlayerDied(
 
 export function OnPlayerUndeploy(eventPlayer: mod.Player): void {
     PlayerUndeployFixer.playerUndeployed(eventPlayer);
-    FFASpawning.Soldier.startDelayForPrompt(eventPlayer);
+
+    if (spawnType === 'ffa') {
+        FFASpawning.Soldier.startDelayForPrompt(eventPlayer);
+    } else {
+        DropInSpawning.Soldier.startDelayForPrompt(eventPlayer);
+    }
 
     if (!DEBUGGING) return;
 
@@ -1052,7 +1109,6 @@ export function OnPlayerUndeploy(eventPlayer: mod.Player): void {
 
     staticLogger?.clear();
     debugMenu?.hide();
-    mod.EnableUIInputMode(false, eventPlayer);
 }
 
 export function OnPlayerEarnedKillAssist(assisterPlayer: mod.Player, victimPlayer: mod.Player): void {
@@ -1077,11 +1133,11 @@ function debug(player: mod.Player): void {
             `Position: ${getPlayerStateVectorString(player, mod.SoldierStateVector.GetPosition)}`,
             0
         );
+
         staticLogger?.logAsync(
             `Facing: ${getPlayerStateVectorString(player, mod.SoldierStateVector.GetFacingDirection)}`,
             1
         );
-        staticLogger?.logAsync(`Tick Rate: ${performanceStats?.tickRate.toFixed(1)}Hz`, 2);
 
         debug(player);
     });

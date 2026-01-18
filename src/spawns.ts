@@ -1,5 +1,6 @@
 import { FFASpawning } from 'bf6-portal-utils/ffa-spawning/index.ts';
 import { MapDetector } from 'bf6-portal-utils/map-detector/index.ts';
+import { DropInSpawning } from './dropin-spawning/index.ts';
 
 const EASTWOOD_SPAWNS: FFASpawning.SpawnData[] = [
     [-296.85, 235.07, -68.62, 180],
@@ -399,13 +400,91 @@ const AREA_22B_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = {
     maxSpawnCandidates: 20,
 };
 
+const IBERIAN_OFFENSIVE_SPAWNS: FFASpawning.SpawnData[] = [
+    [861.92, 75.8, 97.68, 330],
+    [885.18, 78.41, 78.42, 180],
+    [881.98, 70.73, 85.2, 30],
+    [882.38, 66.88, 68.48, 330],
+    [870.66, 66.66, 46.98, 225],
+    [828.22, 70.46, 10.6, 90],
+    [800.19, 72.37, 36.7, 0],
+    [819.5, 74.45, 60.66, 0],
+    [883.07, 78.48, 152.77, 300],
+    [910.72, 72.81, 126.19, 330],
+    [947.49, 73.65, 137.45, 315],
+    [930.92, 75.08, 146.45, 45],
+    [921.98, 75.08, 149.06, 315],
+    [930.5, 81.95, 264.94, 240],
+    [854.66, 89.46, 249.15, 30],
+    [837.69, 89.48, 242.68, 30],
+    [825.79, 89.49, 238.15, 30],
+    [900.53, 85.99, 203.87, 240],
+    [895.08, 85.99, 190.83, 240],
+    [836.93, 82.06, 143.77, 75],
+    [786.65, 82.24, 156.47, 135],
+    [771.23, 82.65, 156.01, 300],
+    [806.11, 78.37, 94.14, 90],
+    [813.0, 82.17, 87.09, 180],
+    [808.31, 82.16, 101.59, 230],
+    [749.89, 86.17, 240.4, 60],
+    [618.44, 79.44, 223.76, 180],
+    [593.28, 79.13, 218.48, 135],
+    [573.97, 71.75, 206.19, 60],
+    [582.03, 72.96, 174.29, 90],
+    [598.53, 75.87, 196.87, 0],
+    [651.01, 79.31, 218.84, 330],
+    [710.13, 78.24, 180.42, 135],
+    [690.19, 76.17, 214.73, 45],
+    [753.95, 81.43, 194.35, 285],
+    [737.17, 78.25, 161.5, 15],
+    [735.78, 79.13, 170.41, 210],
+    [692.2, 72.6, 137.71, 240],
+    [689.66, 72.87, 147.28, 90],
+    [686.68, 76.8, 167.35, 90],
+    [620.75, 75.13, 169.04, 75],
+    [563.09, 72.37, 135.64, 90],
+    [559.75, 71.46, 103.22, 150],
+    [632.89, 75.04, 137.98, 240],
+    [662.04, 75.28, 136.75, 180],
+    [636.99, 72.94, 110.52, 150],
+    [655.36, 72.15, 131.36, 330],
+    [681.17, 71.09, 84.88, 240],
+    [699.23, 72.12, 69.49, 60],
+    [708.4, 71.57, 60.83, 105],
+    [710.79, 71.3, 84.42, 300],
+    [699.21, 75.14, 108.8, 255],
+    [785.88, 74.65, 57.91, 285],
+    [788.56, 87.49, 49.88, 330],
+    [716.54, 76.22, 124.81, 105],
+    [731.29, 77.11, 130.75, 225],
+    [715.84, 77.11, 133.14, 60],
+    [721.27, 77.11, 141.43, 60],
+    [782.85, 82.44, 174.11, 105],
+    [761.0, 82.24, 156.49, 150],
+    [862.22, 74.35, 71.06, 240],
+    [639.34, 75.71, 183.64, 75],
+    [708.74, 75.27, 119.91, 0],
+    [704.81, 75.03, 109.01, 0],
+];
+
+const IBERIAN_OFFENSIVE_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = {
+    minimumSafeDistance: 50,
+    maximumInterestingDistance: 100,
+    safeOverInterestingFallbackFactor: 1.5,
+    maxSpawnCandidates: 20,
+};
+
 function buildInitializeOptions(options: FFASpawning.InitializeOptions): FFASpawning.InitializeOptions {
     return Object.assign({ initialPromptDelay: 3, promptDelay: 10 }, options);
 }
 
-export function getSpawnDataAndInitializeOptions():
-    | { spawnData: FFASpawning.SpawnData[]; spawnOptions: FFASpawning.InitializeOptions }
-    | undefined {
+type SpawnDataAndInitializeOptions = {
+    spawnData?: FFASpawning.SpawnData[];
+    spawnOptions?: FFASpawning.InitializeOptions;
+    dropInData?: DropInSpawning.SpawnData;
+};
+
+export function getSpawnDataAndInitializeOptions(): SpawnDataAndInitializeOptions {
     const map = MapDetector.currentMap();
 
     if (map == MapDetector.Map.EmpireState) {
@@ -443,5 +522,19 @@ export function getSpawnDataAndInitializeOptions():
         };
     }
 
-    return;
+    if (map == MapDetector.Map.IberianOffensive) {
+        return {
+            spawnData: IBERIAN_OFFENSIVE_SPAWNS,
+            spawnOptions: buildInitializeOptions(IBERIAN_OFFENSIVE_INITIALIZATION_OPTIONS),
+        };
+    }
+
+    if (map == MapDetector.Map.OperationFirestorm) {
+        return {
+            spawnOptions: buildInitializeOptions({}),
+            dropInData: { minX: 250, minZ: -135, maxX: 320, maxZ: 100, y: 400 },
+        };
+    }
+
+    return {};
 }
