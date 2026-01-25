@@ -1,6 +1,6 @@
 import { FFASpawning } from 'bf6-portal-utils/ffa-spawning/index.ts';
 import { MapDetector } from 'bf6-portal-utils/map-detector/index.ts';
-import { DropInSpawning } from './dropin-spawning/index.ts';
+import { DropInSpawning } from './drop-in-spawning/index.ts';
 
 const EASTWOOD_SPAWNS: FFASpawning.SpawnData[] = [
     [-296.85, 235.07, -68.62, 180],
@@ -474,6 +474,85 @@ const IBERIAN_OFFENSIVE_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = 
     maxSpawnCandidates: 20,
 };
 
+const OPERATION_FIRESTORM_DROP_INS: DropInSpawning.SpawnData = {
+    spawnRectangles: [
+        { minX: -470, minZ: -115, maxX: -205, maxZ: 80 },
+        { minX: -205, minZ: -190, maxX: 30, maxZ: 150 },
+        { minX: 30, minZ: -350, maxX: 180, maxZ: 150 },
+        { minX: 180, minZ: -140, maxX: 250, maxZ: 150 },
+        { minX: 250, minZ: -140, maxX: 400, maxZ: 0 },
+    ],
+    y: 400,
+};
+
+const LIBERATION_PEAK_DROP_INS: DropInSpawning.SpawnData = {
+    spawnRectangles: [
+        { minX: -240, minZ: 100, maxX: -120, maxZ: 180 },
+        { minX: -120, minZ: 60, maxX: -80, maxZ: 160 },
+        { minX: -80, minZ: 30, maxX: -30, maxZ: 140 },
+        { minX: -30, minZ: 10, maxX: 50, maxZ: 220 },
+        { minX: 50, minZ: 0, maxX: 140, maxZ: 290 },
+        { minX: 90, minZ: 290, maxX: 265, maxZ: 355 },
+    ],
+    y: 400,
+};
+
+const BLACKWELL_FIELDS_DROP_INS: DropInSpawning.SpawnData = {
+    spawnRectangles: [
+        { minX: -235, minZ: -600, maxX: 66, maxZ: -215 },
+        { minX: -70, minZ: -215, maxX: 365, maxZ: 95 },
+    ],
+    y: 350,
+};
+
+const MANHATTAN_BRIDGE_DROP_INS: DropInSpawning.SpawnData = {
+    spawnRectangles: [
+        { minX: -225, minZ: -290, maxX: 25, maxZ: -530 },
+        { minX: -70, minZ: -415, maxX: 140, maxZ: -175 },
+        { minX: -70, minZ: -415, maxX: 140, maxZ: -175 },
+    ],
+    y: 175,
+};
+
+const NEW_SOBEK_CITY_DROP_INS: DropInSpawning.SpawnData = {
+    spawnRectangles: [{ minX: -230, minZ: -225, maxX: 300, maxZ: 0 }],
+    y: 250,
+};
+
+const MIRAK_VALLEY_DROP_INS: DropInSpawning.SpawnData = {
+    spawnRectangles: [
+        { minX: -470, minZ: -375, maxX: -120, maxZ: -180 },
+        { minX: -120, minZ: -415, maxX: 10, maxZ: -115 },
+        { minX: 10, minZ: -475, maxX: 200, maxZ: -115 },
+        { minX: 200, minZ: -550, maxX: 350, maxZ: -315 },
+        { minX: 350, minZ: -515, maxX: 490, maxZ: -365 },
+    ],
+    y: 400,
+};
+
+const GOLF_COURSE_DROP_INS: DropInSpawning.SpawnData = {
+    spawnRectangles: [
+        { minX: -760, minZ: -840, maxX: -65, maxZ: -545 },
+        { minX: -460, minZ: -840, maxX: -65, maxZ: -290 },
+    ],
+    y: 400,
+};
+
+const DEFENSE_NEXUS_DROP_INS: DropInSpawning.SpawnData = {
+    spawnRectangles: [{ minX: -460, minZ: -10, maxX: -30, maxZ: 500 }],
+    y: 400,
+};
+
+const REDLINE_STORAGE_DROP_INS: DropInSpawning.SpawnData = {
+    spawnRectangles: [
+        { minX: 100, minZ: 480, maxX: 910, maxZ: 700 },
+        { minX: 375, minZ: 110, maxX: 690, maxZ: 460 },
+        { minX: 800, minZ: 130, maxX: 980, maxZ: 285 },
+        { minX: 800, minZ: -15, maxX: 900, maxZ: 130 },
+    ],
+    y: 400,
+};
+
 function buildInitializeOptions(options: FFASpawning.InitializeOptions): FFASpawning.InitializeOptions {
     return Object.assign({ initialPromptDelay: 3, promptDelay: 10 }, options);
 }
@@ -532,7 +611,63 @@ export function getSpawnDataAndInitializeOptions(): SpawnDataAndInitializeOption
     if (map == MapDetector.Map.OperationFirestorm) {
         return {
             spawnOptions: buildInitializeOptions({}),
-            dropInData: { minX: 250, minZ: -135, maxX: 320, maxZ: 100, y: 400 },
+            dropInData: OPERATION_FIRESTORM_DROP_INS,
+        };
+    }
+
+    if (map == MapDetector.Map.LiberationPeak) {
+        return {
+            spawnOptions: buildInitializeOptions({}),
+            dropInData: LIBERATION_PEAK_DROP_INS,
+        };
+    }
+
+    if (map == MapDetector.Map.BlackwellFields) {
+        return {
+            spawnOptions: buildInitializeOptions({}),
+            dropInData: BLACKWELL_FIELDS_DROP_INS,
+        };
+    }
+
+    if (map == MapDetector.Map.ManhattanBridge) {
+        return {
+            spawnOptions: buildInitializeOptions({}),
+            dropInData: MANHATTAN_BRIDGE_DROP_INS,
+        };
+    }
+
+    if (map == MapDetector.Map.NewSobekCity) {
+        return {
+            spawnOptions: buildInitializeOptions({}),
+            dropInData: NEW_SOBEK_CITY_DROP_INS,
+        };
+    }
+
+    if (map == MapDetector.Map.MirakValley) {
+        return {
+            spawnOptions: buildInitializeOptions({}),
+            dropInData: MIRAK_VALLEY_DROP_INS,
+        };
+    }
+
+    if (map == MapDetector.Map.GolfCourse) {
+        return {
+            spawnOptions: buildInitializeOptions({}),
+            dropInData: GOLF_COURSE_DROP_INS,
+        };
+    }
+
+    if (map == MapDetector.Map.DefenseNexus) {
+        return {
+            spawnOptions: buildInitializeOptions({}),
+            dropInData: DEFENSE_NEXUS_DROP_INS,
+        };
+    }
+
+    if (map == MapDetector.Map.RedlineStorage) {
+        return {
+            spawnOptions: buildInitializeOptions({}),
+            dropInData: REDLINE_STORAGE_DROP_INS,
         };
     }
 

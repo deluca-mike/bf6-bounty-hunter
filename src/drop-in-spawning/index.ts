@@ -1,16 +1,112 @@
 import { SolidUI } from 'bf6-portal-utils/solid-ui/index.ts';
-import { UI } from 'bf6-portal-utils/ui/index.ts';
 import { Timers } from 'bf6-portal-utils/timers/index.ts';
+import { Logging } from 'bf6-portal-utils/logging/index.ts';
+
+import { UI } from 'bf6-portal-utils/ui/index.ts';
+import { UIContainer } from 'bf6-portal-utils/ui/components/container/index.ts';
+import { UITextButton } from 'bf6-portal-utils/ui/components/text-button/index.ts';
+import { UIText } from 'bf6-portal-utils/ui/components/text/index.ts';
 
 // version: 1.0.0
 export namespace DropInSpawning {
-    export enum LogLevel {
-        Debug = 0,
-        Info = 1,
-        Error = 2,
+    const logger = new Logging('DIS');
+
+    /**
+     * Log levels for controlling logging verbosity.
+     */
+    export const LogLevel = Logging.LogLevel;
+
+    /**
+     * Attaches a logger and defines a minimum log level and whether to include the runtime error in the log.
+     * @param log - The logger function to use. Pass undefined to disable logging.
+     * @param logLevel - The minimum log level to use.
+     * @param includeError - Whether to include the runtime error in the log.
+     */
+    export function setLogging(
+        log?: (text: string) => Promise<void> | void,
+        logLevel?: Logging.LogLevel,
+        includeError?: boolean
+    ): void {
+        logger.setLogging(log, logLevel, includeError);
     }
 
-    export type SpawnData = { minX: number; minZ: number; maxX: number; maxZ: number; y: number };
+    export type SpawnRectangle = {
+        minX: number;
+        minZ: number;
+        maxX: number;
+        maxZ: number;
+    };
+
+    interface Point {
+        x: number;
+        z: number;
+    }
+
+    class SpawnRegion {
+        private rectangles: SpawnRectangle[] = [];
+        private cumulativeAreas: number[] = [];
+        private totalArea: number = 0;
+
+        constructor(zones: SpawnRectangle[]) {
+            if (!zones || zones.length === 0) {
+                throw new Error('SpawnRegion must be initialized with at least one rectangle.');
+            }
+
+            // Pre-calculate areas and weights
+            for (const zone of zones) {
+                // Ensure min is actually smaller than max to prevent negative areas
+                const width = Math.abs(zone.maxX - zone.minX);
+                const depth = Math.abs(zone.maxZ - zone.minZ);
+                const area = width * depth;
+
+                if (area <= 0) continue;
+
+                // Only add zones that actually have size
+                this.rectangles.push(zone);
+                this.totalArea += area;
+                this.cumulativeAreas.push(this.totalArea);
+            }
+        }
+
+        private _randomFloat(min: number, max: number): number {
+            return min + Math.random() * (max - min);
+        }
+
+        /**
+         * Returns a random X/Z coordinate uniformly distributed across all zones.
+         * Time Complexity: O(log N) where N is the number of rectangles.
+         */
+        public getSpawnPoint(): Point {
+            // 1. Select which Rectangle to spawn in based on Area Weight
+            // (Larger rectangles get picked more often)
+            const randomValue = Math.random() * this.totalArea;
+
+            // Binary Search to find the rectangle index
+            let low = 0;
+            let high = this.cumulativeAreas.length - 1;
+            let selectedIndex = -1;
+
+            while (low <= high) {
+                const mid = Math.floor((low + high) / 2);
+
+                if (this.cumulativeAreas[mid] >= randomValue) {
+                    selectedIndex = mid;
+                    high = mid - 1;
+                } else {
+                    low = mid + 1;
+                }
+            }
+
+            const rectangle = this.rectangles[selectedIndex];
+
+            return {
+                x: this._randomFloat(rectangle.minX, rectangle.maxX),
+                z: this._randomFloat(rectangle.minZ, rectangle.maxZ),
+            };
+        }
+    }
+
+    export type SpawnData = { spawnRectangles: SpawnRectangle[]; y: number };
 
     export type Spawn = {
         index: number;
@@ -19,6 +115,7 @@ export namespace DropInSpawning {
     };
 
     export type InitializeOptions = {
+        dropInPoints?: number;
         initialPromptDelay?: number;
         promptDelay?: number;
         queueProcessingDelay?: number;
@@ -46,25 +143,13 @@ export namespace DropInSpawning {
 
         private static _queueProcessingActive: boolean = false;
 
-        private static _logger?: (text: string) => void;
-
-        private static _logLevel: DropInSpawning.LogLevel = 2;
-
-        private static _log(logLevel: DropInSpawning.LogLevel, text: string): void {
-            if (logLevel < this._logLevel) return;
-
-            this._logger?.(`<DIS> ${text}`);
-        }
-
         private static _createRandomSpawnPoint(
-            spawnData: DropInSpawning.SpawnData,
+            spawnRegion: SpawnRegion,
+            y: number,
             index: number
         ): DropInSpawning.Spawn {
-            const location = mod.CreateVector(
-                mod.RandomReal(spawnData.minX, spawnData.maxX),
-                spawnData.y,
-                mod.RandomReal(spawnData.minZ, spawnData.maxZ)
-            );
+            const { x, z } = spawnRegion.getSpawnPoint();
+            const location = mod.CreateVector(x, y, z);
 
             const spawnPoint = mod.SpawnObject(
                 mod.RuntimeSpawn_Common.PlayerSpawner,
@@ -87,10 +172,15 @@ export namespace DropInSpawning {
                 return;
             }
 
-            this._log(DropInSpawning.LogLevel.Debug, `Processing ${this._spawnQueue.length} in queue.`);
+            if (logger.willLog(LogLevel.Debug)) {
+                logger.log(`Processing ${this._spawnQueue.length} in queue.`, LogLevel.Debug);
+            }
 
             if (this._spawnQueue.length == 0) {
-                this._log(DropInSpawning.LogLevel.Debug, `No players in queue. Suspending processing.`);
+                if (logger.willLog(LogLevel.Debug)) {
+                    logger.log(`No players in queue. Suspending processing.`, LogLevel.Debug);
+                }
+
                 this._queueProcessingActive = false;
                 return;
             }
@@ -102,16 +192,14 @@ export namespace DropInSpawning {
 
                 const spawn = this._spawns[Math.floor(Math.random() * this._spawns.length)];
 
-                this._log(
-                    DropInSpawning.LogLevel.Debug,
-                    `Spawning P_${soldier._playerId} at ${this.getVectorString(spawn.location)}.`
-                );
+                if (logger.willLog(LogLevel.Debug)) {
+                    logger.log(
+                        `Spawning P_${soldier._playerId} at ${this.getVectorString(spawn.location)}.`,
+                        LogLevel.Debug
+                    );
+                }
 
                 mod.SpawnPlayerFromSpawnPoint(soldier._player, spawn.spawnPoint);
-
-                if (soldier._isAISoldier) {
-                    Timers.setTimeout(() => mod.AIParachuteBehavior(soldier._player), 2_000);
-                }
             }
 
             Timers.setTimeout(() => this._processSpawnQueue(), this._queueProcessingDelay * 1000);
@@ -135,12 +223,6 @@ export namespace DropInSpawning {
                 .toFixed(2)}>`;
         }
 
-        // Attaches a logger and defines a minimum log level.
-        public static setLogging(log?: (text: string) => void, logLevel?: DropInSpawning.LogLevel): void {
-            this._logger = log;
-            this._logLevel = logLevel ?? DropInSpawning.LogLevel.Info;
-        }
-
         // Should be called in the `OnGameModeStarted()` event.
         public static initialize(
             spawnData: DropInSpawning.SpawnData,
@@ -149,19 +231,33 @@ export namespace DropInSpawning {
             mod.EnableHQ(mod.GetHQ(1), false);
             mod.EnableHQ(mod.GetHQ(2), false);
 
-            this._spawns = Array.from({ length: 32 }, (_, index) => this._createRandomSpawnPoint(spawnData, index));
+            const spawnRegion = new SpawnRegion(spawnData.spawnRectangles);
+
+            if (logger.willLog(LogLevel.Info)) {
+                logger.log(`Using ${spawnData.spawnRectangles.length} drop-in rectangles.`, LogLevel.Info);
+            }
+
+            const dropInPoints = options?.dropInPoints ?? 64;
+
+            this._spawns = Array.from({ length: dropInPoints }, (_, index) =>
+                this._createRandomSpawnPoint(spawnRegion, spawnData.y, index)
+            );
 
             this._initialPromptDelay = options?.initialPromptDelay ?? this._initialPromptDelay;
             this._promptDelay = options?.promptDelay ?? this._promptDelay;
             this._queueProcessingDelay = options?.queueProcessingDelay ?? this._queueProcessingDelay;
 
-            this._log(DropInSpawning.LogLevel.Info, `Initialized with ${this._spawns.length} spawn points.`);
+            if (logger.willLog(LogLevel.Info)) {
+                logger.log(`Initialized with ${dropInPoints} drop-in spawn points.`, LogLevel.Info);
+            }
         }
 
         // Starts the countdown before prompting the player to spawn or delay again, usually in the `OnPlayerJoinGame()` and `OnPlayerUndeploy()` events.
         // AI soldiers will skip the countdown and spawn immediately.
         public static startDelayForPrompt(player: mod.Player): void {
-            this._log(DropInSpawning.LogLevel.Debug, `Start delay request for P_${mod.GetObjId(player)}.`);
+            if (logger.willLog(LogLevel.Debug)) {
+                logger.log(`Start delay request for P_${mod.GetObjId(player)}.`, LogLevel.Debug);
+            }
 
             const soldier = this._ALL_SOLDIERS[mod.GetObjId(player)];
 
@@ -209,7 +305,7 @@ export namespace DropInSpawning {
 
             this._delayCountdown = { get: delayCountdown, set: setDelayCountdown };
 
-            this._promptUI = SolidUI.h(UI.Container, {
+            this._promptUI = SolidUI.h(UIContainer, {
                 x: 0,
                 y: 0,
                 width: 440,
@@ -223,7 +319,7 @@ export namespace DropInSpawning {
                 uiInputModeWhenVisible: true,
             });
 
-            SolidUI.h(UI.TextButton, {
+            SolidUI.h(UITextButton, {
                 parent: this._promptUI,
                 x: 0,
                 y: 20,
@@ -245,7 +341,7 @@ export namespace DropInSpawning {
                 onClick: async (player: mod.Player): Promise<void> => this._addToQueue(),
             });
 
-            SolidUI.h(UI.TextButton, {
+            SolidUI.h(UITextButton, {
                 parent: this._promptUI,
                 x: 0,
                 y: 80,
@@ -267,7 +363,7 @@ export namespace DropInSpawning {
                 onClick: async (player: mod.Player): Promise<void> => this.startDelayForPrompt(Soldier._promptDelay),
             });
 
-            this._countdownUI = SolidUI.h(UI.Text, {
+            this._countdownUI = SolidUI.h(UIText, {
                 x: 0,
                 y: 60,
                 width: 400,
@@ -295,7 +391,7 @@ export namespace DropInSpawning {
                     });
                 }, 1_000);
 
-                this._debugPositionUI = SolidUI.h(UI.Text, {
+                this._debugPositionUI = SolidUI.h(UIText, {
                     width: 360,
                     height: 26,
                     anchor: mod.UIAnchor.BottomCenter,
@@ -326,13 +422,13 @@ export namespace DropInSpawning {
 
         private _delayCountdownInterval?: number;
 
-        private _promptUI?: UI.Container;
+        private _promptUI?: UIContainer;
 
-        private _countdownUI?: UI.Text;
+        private _countdownUI?: UIText;
 
         private _updatePositionInterval?: number;
 
-        private _debugPositionUI?: UI.Text;
+        private _debugPositionUI?: UIText;
 
         public get player(): mod.Player {
             return this._player;
@@ -347,7 +443,9 @@ export namespace DropInSpawning {
         public startDelayForPrompt(delay: number = Soldier._initialPromptDelay): void {
             if (this._isAISoldier) return this._addToQueue();
 
-            Soldier._log(DropInSpawning.LogLevel.Debug, `Starting ${delay}s delay for P_${this._playerId}.`);
+            if (logger.willLog(LogLevel.Debug)) {
+                logger.log(`Starting ${delay}s delay for P_${this._playerId}.`, LogLevel.Debug);
+            }
 
             if (delay <= 0) return this._addToQueue();
 
@@ -374,21 +472,23 @@ export namespace DropInSpawning {
 
             Soldier._spawnQueue.push(this);
 
-            Soldier._log(
-                DropInSpawning.LogLevel.Debug,
-                `P_${this._playerId} added to queue (${Soldier._spawnQueue.length} total).`
-            );
+            if (logger.willLog(LogLevel.Debug)) {
+                logger.log(`P_${this._playerId} added to queue (${Soldier._spawnQueue.length} total).`, LogLevel.Debug);
+            }
 
             if (!Soldier._queueProcessingEnabled || Soldier._queueProcessingActive) return;
 
-            Soldier._log(DropInSpawning.LogLevel.Debug, `Restarting spawn queue processing.`);
+            if (logger.willLog(LogLevel.Debug)) {
+                logger.log(`Restarting spawn queue processing.`, LogLevel.Debug);
+            }
+
             Soldier._processSpawnQueue();
         }
 
         private _deleteIfNotValid(): boolean {
             if (mod.IsPlayerValid(this._player)) return false;
 
-            Soldier._log(DropInSpawning.LogLevel.Info, `P_${this._playerId} is no longer valid.`);
+            logger.log(`P_${this._playerId} is no longer valid.`, LogLevel.Warning);
 
             Timers.clearInterval(this._delayCountdownInterval);
             Timers.clearInterval(this._updatePositionInterval);

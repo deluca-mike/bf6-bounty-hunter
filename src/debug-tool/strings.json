@@ -1,0 +1,11 @@
+{
+    "debugTool": {
+        "buttons": {
+            "toggleStaticLogger": "Toggle Static Logger",
+            "toggleDynamicLogger": "Toggle Dynamic Logger",
+            "clearStaticLogger": "Clear Static Logger",
+            "clearDynamicLogger": "Clear Dynamic Logger",
+            "close": "Close"
+        }
+    }
+}

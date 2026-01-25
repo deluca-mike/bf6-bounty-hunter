@@ -2,7 +2,7 @@
     "dropInSpawning": {
         "countdown": "Spawning available in {} seconds...",
         "buttons": {
-            "spawn": "Spawn now",
+            "spawn": "Drop-in spawn now",
             "delay": "Ask again in {} seconds"
         },
         "debug": {
