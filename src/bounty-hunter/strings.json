@@ -1,0 +1,43 @@
+{
+    "bountyHunter": {
+        "hud": {
+            "killStreak": "Streak: {}        Bounty on your head: {} PTS",
+            "spotted": "Auto-Spotted {}s on / {}s off",
+            "notSpotted": "Not Auto-Spotted",
+            "award": "+ {} PTS",
+            "killLog": "Ended {}'s {}-kill streak (+ {} PTS)",
+            "assistLog": "Helped end {}'s {}-kill streak (+ {} PTS)",
+            "scavengerLog": "+ Scavenged ammo crate",
+            "bigBountyCollected": "> {} collected {} PT bounty on {}",
+            "callInLogs": {
+                "uav": "+ UAV call-in awarded",
+                "artilleryStrike": "+ Artillery Strike call-in awarded",
+                "smokeScreen": "+ Smoke Screen call-in awarded"
+            },
+            "bigBounty": {
+                "points": "{} PT Bounty",
+                "headingN": "{}m N",
+                "headingNE": "{}m NE",
+                "headingE": "{}m E",
+                "headingSE": "{}m SE",
+                "headingS": "{}m S",
+                "headingSW": "{}m SW",
+                "headingW": "{}m W",
+                "headingNW": "{}m NW",
+                "unknownHeading": "?m ?"
+            }
+        },
+        "scoreboard": {
+            "header": "Target Points: {} - Leader: {}",
+            "none": "None",
+            "columns": {
+                "points": "Points",
+                "kills": "Kills",
+                "assists": "Assists",
+                "deaths": "Deaths",
+                "bounty": "Bounty"
+            }
+        },
+        "worldIcon": "{} PT Bounty"
+    }
+}

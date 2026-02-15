@@ -13,7 +13,7 @@ export async function createVehicleSpawner(
         getRotationVector(orientation)
     ) as mod.VehicleSpawner;
 
-    await mod.Wait(5);
+    await mod.Wait(2);
 
     mod.SetVehicleSpawnerVehicleType(spawner, vehicleType);
     mod.SetVehicleSpawnerAutoSpawn(spawner, autoSpawn);
