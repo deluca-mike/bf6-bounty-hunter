@@ -1,28 +1,26 @@
 import { Events } from 'bf6-portal-utils/events/index.ts';
-import { FFASpawning } from 'bf6-portal-utils/ffa-spawning/index.ts';
-import { MultiClickDetector } from 'bf6-portal-utils/multi-click-detector/index.ts';
-import { Sounds } from 'bf6-portal-utils/sounds/index.ts';
+import { FFADropIns } from 'bf6-portal-utils/ffa-drop-ins/index.ts';
+import { FFASpawnPoints } from 'bf6-portal-utils/ffa-spawn-points/index.ts';
 import { MapDetector } from 'bf6-portal-utils/map-detector/index.ts';
-import { Timers } from 'bf6-portal-utils/timers/index.ts';
+import { MultiClickDetector } from 'bf6-portal-utils/multi-click-detector/index.ts';
+import { PlayerUndeployFixer } from 'bf6-portal-utils/player-undeploy-fixer/index.ts';
 import { ScavengerDrop } from 'bf6-portal-utils/scavenger-drop/index.ts';
-
-import { UI } from 'bf6-portal-utils/ui/index.ts';
+import { Sounds } from 'bf6-portal-utils/sounds/index.ts';
+import { Timers } from 'bf6-portal-utils/timers/index.ts';
 
 import { DebugTool } from './debug-tool/index.ts';
 import { BountyHunter } from './bounty-hunter/index.ts';
-import { PlayerUndeployFixer } from './player-undeploy-fixer/index.ts';
-import { DropInSpawning } from './drop-in-spawning/index.ts';
 import { createVehicleSpawner } from './utils/vehicle-spawner.ts';
 
 import { getPlayerStateVectorString } from './helpers/index.ts';
 
 import { getSpawnDataAndInitializeOptions } from './spawns.ts';
 
-const DEBUGGING = false;
+const DEBUGGING = true;
 
 let adminDebugTool: DebugTool | undefined;
 let telemetryInterval: number | undefined;
-let spawnType: 'ffa' | 'dropIn' | 'default' | undefined;
+let spawnType: 'spawnPoints' | 'dropIns' | 'default' | undefined;
 
 const EASTWOOD_VEHICLE_SPAWNS: { position: mod.Vector; orientation: number; spawner?: mod.VehicleSpawner }[] = [
     { position: mod.CreateVector(-120.1, 233.56, 119.31), orientation: 165 },
@@ -103,15 +101,17 @@ function createAdminDebugTool(player: mod.Player): void {
         );
     });
 
-    const logger = (text: string) => adminDebugTool?.dynamicLog(text);
+    const adminLogger = (text: string) => adminDebugTool?.dynamicLog(text);
 
-    PlayerUndeployFixer.setLogging(logger, PlayerUndeployFixer.LogLevel.Warning);
-    Timers.setLogging(logger, Timers.LogLevel.Warning);
-    ScavengerDrop.setLogging(logger, ScavengerDrop.LogLevel.Warning);
-    Sounds.setLogging(logger, Sounds.LogLevel.Warning);
-    FFASpawning.setLogging(logger, FFASpawning.LogLevel.Warning);
-    DropInSpawning.setLogging(logger, DropInSpawning.LogLevel.Warning);
-    MultiClickDetector.setLogging(logger, MultiClickDetector.LogLevel.Warning);
+    Events.setLogging(adminLogger, Events.LogLevel.Warning);
+    FFADropIns.setLogging(adminLogger, FFADropIns.LogLevel.Warning);
+    FFASpawnPoints.setLogging(adminLogger, FFASpawnPoints.LogLevel.Warning);
+    MapDetector.setLogging(adminLogger, MapDetector.LogLevel.Warning);
+    MultiClickDetector.setLogging(adminLogger, MultiClickDetector.LogLevel.Warning);
+    PlayerUndeployFixer.setLogging(adminLogger, PlayerUndeployFixer.LogLevel.Warning);
+    ScavengerDrop.setLogging(adminLogger, ScavengerDrop.LogLevel.Warning);
+    Sounds.setLogging(adminLogger, Sounds.LogLevel.Warning);
+    Timers.setLogging(adminLogger, Timers.LogLevel.Warning);
 }
 
 function destroyAdminDebugTool(): void {
@@ -139,7 +139,7 @@ function showTelemetry(player: mod.Player): void {
 
     if (mod.GetObjId(player) != 0) return;
 
-    telemetryInterval = Timers.setInterval(() => {
+    const updateTelemetry = () => {
         adminDebugTool?.staticLog(
             `Position: ${getPlayerStateVectorString(player, mod.SoldierStateVector.GetPosition)}`,
             1
@@ -151,7 +151,9 @@ function showTelemetry(player: mod.Player): void {
         );
 
         adminDebugTool?.staticLog(`Active timers: ${Timers.getActiveTimerCount()}`, 3);
-    }, 1000);
+    };
+
+    telemetryInterval = Timers.setInterval(updateTelemetry, 1000);
 }
 
 function stopTelemetry(player: mod.Player): void {
@@ -173,14 +175,14 @@ function handleGameModeSetup(): void {
     const spawnInitData = getSpawnDataAndInitializeOptions();
 
     if (spawnInitData.spawnData) {
-        FFASpawning.Soldier.initialize(spawnInitData.spawnData, spawnInitData.spawnOptions);
-        FFASpawning.Soldier.enableSpawnQueueProcessing();
-        spawnType = 'ffa';
+        FFASpawnPoints.initialize(spawnInitData.spawnData, spawnInitData.spawnOptions);
+        FFASpawnPoints.enableSpawnQueueProcessing();
+        spawnType = 'spawnPoints';
         adminDebugTool?.dynamicLog(`<SCRIPT> FFA spawn type initialized.`);
     } else if (spawnInitData.dropInData) {
-        DropInSpawning.Soldier.initialize(spawnInitData.dropInData, spawnInitData.spawnOptions);
-        DropInSpawning.Soldier.enableSpawnQueueProcessing();
-        spawnType = 'dropIn';
+        FFADropIns.initialize(spawnInitData.dropInData, spawnInitData.spawnOptions);
+        FFADropIns.enableSpawnQueueProcessing();
+        spawnType = 'dropIns';
         adminDebugTool?.dynamicLog(`<SCRIPT> Drop in spawn type initialized.`);
     } else {
         adminDebugTool?.dynamicLog(`<SCRIPT> No spawn data or drop in data found.`);
@@ -221,9 +223,9 @@ function createSpawningSoldier(player: mod.Player): boolean {
     const playerId = mod.GetObjId(player);
 
     const soldier =
-        spawnType === 'ffa'
-            ? new FFASpawning.Soldier(player, DEBUGGING && playerId === 0)
-            : new DropInSpawning.Soldier(player, DEBUGGING && playerId === 0);
+        spawnType === 'spawnPoints'
+            ? new FFASpawnPoints.Soldier(player, DEBUGGING && playerId === 0)
+            : new FFADropIns.Soldier(player, DEBUGGING && playerId === 0);
 
     soldier.startDelayForPrompt();
 
@@ -233,29 +235,24 @@ function createSpawningSoldier(player: mod.Player): boolean {
 function handlePlayerJoinedGame(player: mod.Player): void {
     new BountyHunter(player);
 
-    const interval = Timers.setInterval(
-        () => {
-            if (!createSpawningSoldier(player)) return;
+    const tryCreateSpawningSoldier = () => {
+        if (!createSpawningSoldier(player)) return;
 
-            Timers.clearInterval(interval);
-        },
-        1_000,
-        true
-    );
+        Timers.clearInterval(interval);
+    };
+
+    const interval = Timers.setInterval(tryCreateSpawningSoldier, 1_000, true);
 }
 
 function handlePlayerUndeployed(player: mod.Player): void {
-    if (spawnType === 'ffa') {
-        FFASpawning.Soldier.startDelayForPrompt(player);
-    } else if (spawnType === 'dropIn') {
-        DropInSpawning.Soldier.startDelayForPrompt(player);
+    if (spawnType === 'spawnPoints') {
+        FFASpawnPoints.Soldier.startDelayForPrompt(player);
+    } else if (spawnType === 'dropIns') {
+        FFADropIns.Soldier.startDelayForPrompt(player);
     } else {
         adminDebugTool?.dynamicLog(`<SCRIPT> No spawn type found when P_${mod.GetObjId(player)} undeployed.`);
     }
 }
-
-// Event subscription needed for handling UI button events.
-Events.OnPlayerUIButtonEvent.subscribe(UI.handleButtonEvent);
 
 // Event subscriptions for the admin debug tool.
 Events.OnPlayerJoinGame.subscribe(createAdminDebugTool);
@@ -263,20 +260,11 @@ Events.OnPlayerDeployed.subscribe(showTelemetry);
 Events.OnPlayerUndeploy.subscribe(stopTelemetry);
 Events.OnPlayerLeaveGame.subscribe(destroyAdminDebugTool);
 
-// Event subscriptions needed for multi-click detectors.
-Events.OngoingPlayer.subscribe(MultiClickDetector.handleOngoingPlayer);
-Events.OnPlayerLeaveGame.subscribe(MultiClickDetector.pruneInvalidPlayers);
-
 // Event subscriptions for game mode.
 Events.OnGameModeStarted.subscribe(handleGameModeSetup);
 Events.OnTimeLimitReached.subscribe(handleTimeLimitReached);
 Events.OnPlayerJoinGame.subscribe(handlePlayerJoinedGame);
-Events.OnPlayerEarnedKill.subscribe(
-    (killer: mod.Player, victim: mod.Player, deathType: mod.DeathType, weapon: mod.WeaponUnlock) =>
-        BountyHunter.handleKill(killer, victim)
-);
-Events.OnPlayerDeployed.subscribe((player: mod.Player) => BountyHunter.handleDeployed(player));
+Events.OnPlayerEarnedKill.subscribe(BountyHunter.handleKill);
+Events.OnPlayerDeployed.subscribe(BountyHunter.handleDeployed);
 Events.OnPlayerUndeploy.subscribe(handlePlayerUndeployed);
-Events.OnPlayerEarnedKillAssist.subscribe((assister: mod.Player, victim: mod.Player) =>
-    BountyHunter.handleAssist(assister, victim)
-);
+Events.OnPlayerEarnedKillAssist.subscribe(BountyHunter.handleAssist);

@@ -7,7 +7,7 @@
             "award": "+ {} PTS",
             "killLog": "Ended {}'s {}-kill streak (+ {} PTS)",
             "assistLog": "Helped end {}'s {}-kill streak (+ {} PTS)",
-            "scavengerLog": "+ Scavenged ammo crate",
+            "scavengerLog": "+ Scavenged ammo",
             "bigBountyCollected": "> {} collected {} PT bounty on {}",
             "callInLogs": {
                 "uav": "+ UAV call-in awarded",

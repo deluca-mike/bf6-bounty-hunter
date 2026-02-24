@@ -1,8 +1,8 @@
-import { FFASpawning } from 'bf6-portal-utils/ffa-spawning/index.ts';
+import { FFADropIns } from 'bf6-portal-utils/ffa-drop-ins/index.ts';
+import { FFASpawnPoints } from 'bf6-portal-utils/ffa-spawn-points/index.ts';
 import { MapDetector } from 'bf6-portal-utils/map-detector/index.ts';
-import { DropInSpawning } from './drop-in-spawning/index.ts';
 
-const EASTWOOD_SPAWNS: FFASpawning.SpawnData[] = [
+const EASTWOOD_SPAWNS: FFASpawnPoints.SpawnData[] = [
     [-296.85, 235.07, -68.62, 180],
     [-263.63, 235.47, -81.83, 90],
     [-183.3, 237.29, -90.6, 180],
@@ -48,14 +48,14 @@ const EASTWOOD_SPAWNS: FFASpawning.SpawnData[] = [
     [-5.62, 232.57, -27.09, 105],
 ];
 
-const EASTWOOD_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = {
+const EASTWOOD_INITIALIZATION_OPTIONS: FFASpawnPoints.InitializeOptions = {
     minimumSafeDistance: 60,
     maximumInterestingDistance: 120,
     safeOverInterestingFallbackFactor: 1.5,
     maxSpawnCandidates: 20,
 };
 
-const EMPIRE_STATE_SPAWNS: FFASpawning.SpawnData[] = [
+const EMPIRE_STATE_SPAWNS: FFASpawnPoints.SpawnData[] = [
     [-734.85, 55.51, -201.63, 130],
     [-687.65, 55.53, -209.33, 180],
     [-655.35, 55.53, -190.42, 90],
@@ -148,14 +148,14 @@ const EMPIRE_STATE_SPAWNS: FFASpawning.SpawnData[] = [
     [-607.0, 57.12, -167.2, 330],
 ];
 
-const EMPIRE_STATE_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = {
+const EMPIRE_STATE_INITIALIZATION_OPTIONS: FFASpawnPoints.InitializeOptions = {
     minimumSafeDistance: 30,
     maximumInterestingDistance: 60,
     safeOverInterestingFallbackFactor: 1.5,
     maxSpawnCandidates: 20,
 };
 
-const DOWNTOWN_SPAWNS: FFASpawning.SpawnData[] = [
+const DOWNTOWN_SPAWNS: FFASpawnPoints.SpawnData[] = [
     [-1267.66, 108.19, 280.59, 0],
     [-1251.24, 108.19, 256.09, 180],
     [-1231.36, 108.15, 211.02, 30],
@@ -248,14 +248,14 @@ const DOWNTOWN_SPAWNS: FFASpawning.SpawnData[] = [
     [-1143.06, 114.83, 212.84, 340],
 ];
 
-const DOWNTOWN_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = {
+const DOWNTOWN_INITIALIZATION_OPTIONS: FFASpawnPoints.InitializeOptions = {
     minimumSafeDistance: 40,
     maximumInterestingDistance: 80,
     safeOverInterestingFallbackFactor: 1.5,
     maxSpawnCandidates: 20,
 };
 
-const MARINA_SPAWNS: FFASpawning.SpawnData[] = [
+const MARINA_SPAWNS: FFASpawnPoints.SpawnData[] = [
     [-1511.41, 103.72, -651.62, 60],
     [-1472.89, 103.67, -871.54, 75],
     [-1462.79, 122.72, -984.3, 150],
@@ -314,14 +314,14 @@ const MARINA_SPAWNS: FFASpawning.SpawnData[] = [
     [-1070.25, 114.46, -600.06, 130],
 ];
 
-const MARINA_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = {
+const MARINA_INITIALIZATION_OPTIONS: FFASpawnPoints.InitializeOptions = {
     minimumSafeDistance: 40,
     maximumInterestingDistance: 80,
     safeOverInterestingFallbackFactor: 1.5,
     maxSpawnCandidates: 20,
 };
 
-const AREA_22B_SPAWNS: FFASpawning.SpawnData[] = [
+const AREA_22B_SPAWNS: FFASpawnPoints.SpawnData[] = [
     [225.85, 218.31, -1047.84, 190],
     [271.2, 214.81, -1059.51, 285],
     [274.18, 218.45, -1010.47, 60],
@@ -393,14 +393,14 @@ const AREA_22B_SPAWNS: FFASpawning.SpawnData[] = [
     [693.87, 201.17, -396.79, 220],
 ];
 
-const AREA_22B_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = {
+const AREA_22B_INITIALIZATION_OPTIONS: FFASpawnPoints.InitializeOptions = {
     minimumSafeDistance: 50,
     maximumInterestingDistance: 100,
     safeOverInterestingFallbackFactor: 1.5,
     maxSpawnCandidates: 20,
 };
 
-const IBERIAN_OFFENSIVE_SPAWNS: FFASpawning.SpawnData[] = [
+const IBERIAN_OFFENSIVE_SPAWNS: FFASpawnPoints.SpawnData[] = [
     [861.92, 75.8, 97.68, 330],
     [885.18, 78.41, 78.42, 180],
     [881.98, 70.73, 85.2, 30],
@@ -467,14 +467,14 @@ const IBERIAN_OFFENSIVE_SPAWNS: FFASpawning.SpawnData[] = [
     [704.81, 75.03, 109.01, 0],
 ];
 
-const IBERIAN_OFFENSIVE_INITIALIZATION_OPTIONS: FFASpawning.InitializeOptions = {
+const IBERIAN_OFFENSIVE_INITIALIZATION_OPTIONS: FFASpawnPoints.InitializeOptions = {
     minimumSafeDistance: 50,
     maximumInterestingDistance: 100,
     safeOverInterestingFallbackFactor: 1.5,
     maxSpawnCandidates: 20,
 };
 
-const OPERATION_FIRESTORM_DROP_INS: DropInSpawning.SpawnData = {
+const OPERATION_FIRESTORM_DROP_INS: FFADropIns.SpawnData = {
     spawnRectangles: [
         { minX: -470, minZ: -115, maxX: -205, maxZ: 80 },
         { minX: -205, minZ: -190, maxX: 30, maxZ: 150 },
@@ -485,7 +485,7 @@ const OPERATION_FIRESTORM_DROP_INS: DropInSpawning.SpawnData = {
     y: 400,
 };
 
-const LIBERATION_PEAK_DROP_INS: DropInSpawning.SpawnData = {
+const LIBERATION_PEAK_DROP_INS: FFADropIns.SpawnData = {
     spawnRectangles: [
         { minX: -240, minZ: 100, maxX: -120, maxZ: 180 },
         { minX: -120, minZ: 60, maxX: -80, maxZ: 160 },
@@ -497,7 +497,7 @@ const LIBERATION_PEAK_DROP_INS: DropInSpawning.SpawnData = {
     y: 400,
 };
 
-const BLACKWELL_FIELDS_DROP_INS: DropInSpawning.SpawnData = {
+const BLACKWELL_FIELDS_DROP_INS: FFADropIns.SpawnData = {
     spawnRectangles: [
         { minX: -235, minZ: -600, maxX: 66, maxZ: -215 },
         { minX: -70, minZ: -215, maxX: 365, maxZ: 95 },
@@ -505,7 +505,7 @@ const BLACKWELL_FIELDS_DROP_INS: DropInSpawning.SpawnData = {
     y: 350,
 };
 
-const MANHATTAN_BRIDGE_DROP_INS: DropInSpawning.SpawnData = {
+const MANHATTAN_BRIDGE_DROP_INS: FFADropIns.SpawnData = {
     spawnRectangles: [
         { minX: -225, minZ: -290, maxX: 25, maxZ: -530 },
         { minX: -70, minZ: -415, maxX: 140, maxZ: -175 },
@@ -514,12 +514,12 @@ const MANHATTAN_BRIDGE_DROP_INS: DropInSpawning.SpawnData = {
     y: 175,
 };
 
-const NEW_SOBEK_CITY_DROP_INS: DropInSpawning.SpawnData = {
+const NEW_SOBEK_CITY_DROP_INS: FFADropIns.SpawnData = {
     spawnRectangles: [{ minX: -230, minZ: -225, maxX: 300, maxZ: 0 }],
     y: 250,
 };
 
-const MIRAK_VALLEY_DROP_INS: DropInSpawning.SpawnData = {
+const MIRAK_VALLEY_DROP_INS: FFADropIns.SpawnData = {
     spawnRectangles: [
         { minX: -470, minZ: -375, maxX: -120, maxZ: -180 },
         { minX: -120, minZ: -415, maxX: 10, maxZ: -115 },
@@ -530,7 +530,7 @@ const MIRAK_VALLEY_DROP_INS: DropInSpawning.SpawnData = {
     y: 400,
 };
 
-const GOLF_COURSE_DROP_INS: DropInSpawning.SpawnData = {
+const GOLF_COURSE_DROP_INS: FFADropIns.SpawnData = {
     spawnRectangles: [
         { minX: -760, minZ: -840, maxX: -65, maxZ: -545 },
         { minX: -460, minZ: -840, maxX: -65, maxZ: -290 },
@@ -538,12 +538,12 @@ const GOLF_COURSE_DROP_INS: DropInSpawning.SpawnData = {
     y: 400,
 };
 
-const DEFENSE_NEXUS_DROP_INS: DropInSpawning.SpawnData = {
+const DEFENSE_NEXUS_DROP_INS: FFADropIns.SpawnData = {
     spawnRectangles: [{ minX: -460, minZ: -10, maxX: -30, maxZ: 500 }],
     y: 400,
 };
 
-const REDLINE_STORAGE_DROP_INS: DropInSpawning.SpawnData = {
+const REDLINE_STORAGE_DROP_INS: FFADropIns.SpawnData = {
     spawnRectangles: [
         { minX: 100, minZ: 480, maxX: 910, maxZ: 700 },
         { minX: 375, minZ: 110, maxX: 690, maxZ: 460 },
@@ -553,14 +553,14 @@ const REDLINE_STORAGE_DROP_INS: DropInSpawning.SpawnData = {
     y: 400,
 };
 
-function buildInitializeOptions(options: FFASpawning.InitializeOptions): FFASpawning.InitializeOptions {
+function buildInitializeOptions(options: FFASpawnPoints.InitializeOptions): FFASpawnPoints.InitializeOptions {
     return Object.assign({ initialPromptDelay: 3, promptDelay: 10 }, options);
 }
 
 type SpawnDataAndInitializeOptions = {
-    spawnData?: FFASpawning.SpawnData[];
-    spawnOptions?: FFASpawning.InitializeOptions;
-    dropInData?: DropInSpawning.SpawnData;
+    spawnData?: FFASpawnPoints.SpawnData[];
+    spawnOptions?: FFASpawnPoints.InitializeOptions;
+    dropInData?: FFADropIns.SpawnData;
 };
 
 export function getSpawnDataAndInitializeOptions(): SpawnDataAndInitializeOptions {

@@ -1,4 +1,5 @@
-import { getRotationVector } from '../helpers/index.ts';
+import { Timers } from 'bf6-portal-utils/timers/index.ts';
+import { Vectors } from 'bf6-portal-utils/vectors/index.ts';
 
 export async function createVehicleSpawner(
     position: mod.Vector,
@@ -7,23 +8,27 @@ export async function createVehicleSpawner(
     autoSpawn: boolean,
     respawnTime: number
 ): Promise<mod.VehicleSpawner> {
-    const spawner = mod.SpawnObject(
-        mod.RuntimeSpawn_Common.VehicleSpawner,
-        position,
-        getRotationVector(orientation)
-    ) as mod.VehicleSpawner;
+    return new Promise((resolve) => {
+        const spawner = mod.SpawnObject(
+            mod.RuntimeSpawn_Common.VehicleSpawner,
+            position,
+            Vectors.getRotationVector(orientation)
+        ) as mod.VehicleSpawner;
 
-    await mod.Wait(2);
+        const setupVehicleSpawner = () => {
+            mod.SetVehicleSpawnerVehicleType(spawner, vehicleType);
+            mod.SetVehicleSpawnerAutoSpawn(spawner, autoSpawn);
+            mod.SetVehicleSpawnerRespawnTime(spawner, respawnTime);
 
-    mod.SetVehicleSpawnerVehicleType(spawner, vehicleType);
-    mod.SetVehicleSpawnerAutoSpawn(spawner, autoSpawn);
-    mod.SetVehicleSpawnerRespawnTime(spawner, respawnTime);
+            // SetVehicleSpawnerAbandonVehiclesOutOfCombatArea
+            // SetVehicleSpawnerApplyDamageToAbandonVehicle
+            // SetVehicleSpawnerKeepAliveAbandonRadius
+            // SetVehicleSpawnerKeepAliveSpawnerRadius
+            // SetVehicleSpawnerTimeUntilAbandon
+        };
 
-    // SetVehicleSpawnerAbandonVehiclesOutOfCombatArea
-    // SetVehicleSpawnerApplyDamageToAbandonVehicle
-    // SetVehicleSpawnerKeepAliveAbandonRadius
-    // SetVehicleSpawnerKeepAliveSpawnerRadius
-    // SetVehicleSpawnerTimeUntilAbandon
+        Timers.setTimeout(setupVehicleSpawner, 2_000);
 
-    return spawner;
+        resolve(spawner);
+    });
 }

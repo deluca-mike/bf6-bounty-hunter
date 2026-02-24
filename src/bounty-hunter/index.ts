@@ -143,7 +143,7 @@ export class BountyHunter {
 
     private static readonly _WORLD_ICON_OFFSET: mod.Vector = mod.CreateVector(0, 3, 0);
 
-    private static readonly _AWARD_DURATION: number = 2; // In seconds.
+    private static readonly _AWARD_DURATION: number = 2_000; // In milliseconds.
 
     private static readonly _ALL_BOUNTY_HUNTERS: Map<number, BountyHunter> = new Map();
 
@@ -170,38 +170,38 @@ export class BountyHunter {
     }
 
     private static _getKillStreakMessage(killStreak: number): mod.Message {
-        return mod.Message(mod.stringkeys.bountyHunter.hud.killStreak, killStreak, this._getBounty(killStreak));
+        return mod.Message(mod.stringkeys.bountyHunter.hud.killStreak, killStreak, BountyHunter._getBounty(killStreak));
     }
 
     private static _getSpottedMessage(killStreak: number): mod.Message {
-        const duration = this._getSpottingDuration(killStreak);
-        const delay = this._getSpottingDelay(killStreak);
+        const duration = BountyHunter._getSpottingDuration(killStreak);
+        const delay = BountyHunter._getSpottingDelay(killStreak);
 
         return !duration || !delay
-            ? this._NOT_SPOTTED_MESSAGE
+            ? BountyHunter._NOT_SPOTTED_MESSAGE
             : mod.Message(mod.stringkeys.bountyHunter.hud.spotted, duration / 1_000, delay / 1_000);
     }
 
     private static _getSpottingDuration(killStreak: number): number {
-        const durations = this._SPOTTING_DURATIONS;
+        const durations = BountyHunter._SPOTTING_DURATIONS;
         return killStreak < durations.length ? durations[killStreak] : durations[durations.length - 1];
     }
 
     private static _getSpottingDelay(killStreak: number): number {
-        const delays = this._STREAK_SPOTTING_DELAYS;
+        const delays = BountyHunter._STREAK_SPOTTING_DELAYS;
         return killStreak < delays.length ? delays[killStreak] : delays[delays.length - 1];
     }
 
     private static _getFlaggingDelay(killStreak: number): number {
-        const delays = this._STREAK_FLAGGING_DELAYS;
+        const delays = BountyHunter._STREAK_FLAGGING_DELAYS;
         return killStreak < delays.length ? delays[killStreak] : delays[delays.length - 1];
     }
 
     private static _getBounty(killStreak: number): number {
-        const multipliers = this._BOUNTY_MULTIPLIERS;
+        const multipliers = BountyHunter._BOUNTY_MULTIPLIERS;
 
         return (
-            this._BASE_KILL_POINTS *
+            BountyHunter._BASE_KILL_POINTS *
             (killStreak < multipliers.length ? multipliers[killStreak] : multipliers[multipliers.length - 1])
         );
     }
@@ -213,12 +213,12 @@ export class BountyHunter {
     private static _getAwardSound(
         killStreak: number
     ): { sfxAsset: mod.RuntimeSpawn_Common; amplitude: number } | undefined {
-        const sounds = this._AWARD_SOUNDS;
+        const sounds = BountyHunter._AWARD_SOUNDS;
         return killStreak < sounds.length ? sounds[killStreak] : sounds[sounds.length - 1];
     }
 
     private static _createWorldIcon(position: mod.Vector): mod.WorldIcon {
-        const worldIcon = mod.SpawnObject(mod.RuntimeSpawn_Common.WorldIcon, position, this._ZERO_VECTOR);
+        const worldIcon = mod.SpawnObject(mod.RuntimeSpawn_Common.WorldIcon, position, BountyHunter._ZERO_VECTOR);
         mod.SetWorldIconColor(worldIcon, UI.COLORS.BF_RED_BRIGHT); // TODO: Use color based on kill streak?
         mod.SetWorldIconImage(worldIcon, mod.WorldIconImages.Triangle);
         mod.EnableWorldIconImage(worldIcon, true);
@@ -236,20 +236,23 @@ export class BountyHunter {
     private static _updateBigBounties(bountyHunter: BountyHunter, bounty: number, position: mod.Vector): boolean {
         const playerId = bountyHunter._playerId;
 
-        if (bounty < this._BIG_BOUNTY_THRESHOLD) {
+        if (bounty < BountyHunter._BIG_BOUNTY_THRESHOLD) {
             // Try to delete the big bounty, but if it didn't exist, return so we don't force UI updates.
-            if (!this._BIG_BOUNTIES.delete(playerId)) return false;
+            if (!BountyHunter._BIG_BOUNTIES.delete(playerId)) return false;
         } else {
-            this._BIG_BOUNTIES.set(playerId, { bountyHunter, bounty, position });
+            BountyHunter._BIG_BOUNTIES.set(playerId, { bountyHunter, bounty, position });
         }
 
-        if (this._logger.willLog(this.LogLevel.Debug)) {
-            this._logger.log(`${this._BIG_BOUNTIES.size} total big bounties.`, this.LogLevel.Debug);
+        if (BountyHunter._logger.willLog(BountyHunter.LogLevel.Debug)) {
+            BountyHunter._logger.log(
+                `${BountyHunter._BIG_BOUNTIES.size} total big bounties.`,
+                BountyHunter.LogLevel.Debug
+            );
         }
 
-        const bigBounties = Array.from(this._BIG_BOUNTIES.values()).sort((a, b) => a.bounty - b.bounty); // Ascending sort.
+        const bigBounties = Array.from(BountyHunter._BIG_BOUNTIES.values()).sort((a, b) => a.bounty - b.bounty); // Ascending sort.
 
-        for (const bountyHunter of this._ALL_BOUNTY_HUNTERS.values()) {
+        for (const bountyHunter of BountyHunter._ALL_BOUNTY_HUNTERS.values()) {
             bountyHunter._updateBigBountiesUI(bigBounties);
         }
 
@@ -257,11 +260,11 @@ export class BountyHunter {
     }
 
     private static _clearBigBounty(victim: BountyHunter, bounty: number, killer?: BountyHunter): void {
-        const wasBigBounty = this._updateBigBounties(victim, 0, this._ZERO_VECTOR);
+        const wasBigBounty = BountyHunter._updateBigBounties(victim, 0, BountyHunter._ZERO_VECTOR);
 
         if (!killer || !wasBigBounty) return;
 
-        for (const bountyHunter of this._ALL_BOUNTY_HUNTERS.values()) {
+        for (const bountyHunter of BountyHunter._ALL_BOUNTY_HUNTERS.values()) {
             if (bountyHunter._playerId === killer._playerId && bountyHunter._playerId === victim._playerId) continue;
 
             mod.DisplayHighlightedWorldLogMessage(
@@ -277,7 +280,7 @@ export class BountyHunter {
             width: 400,
             height: 20,
             anchor: mod.UIAnchor.TopCenter,
-            message: this._getKillStreakMessage(0),
+            message: BountyHunter._getKillStreakMessage(0),
             textSize: 20,
             textColor: UI.COLORS.BF_GREEN_BRIGHT,
             parent,
@@ -290,7 +293,7 @@ export class BountyHunter {
             width: 400,
             height: 20,
             anchor: mod.UIAnchor.TopCenter,
-            message: this._getSpottedMessage(0),
+            message: BountyHunter._getSpottedMessage(0),
             textSize: 20,
             textColor: UI.COLORS.BF_GREEN_BRIGHT,
             parent,
@@ -303,7 +306,7 @@ export class BountyHunter {
             width: 100,
             height: 32,
             anchor: mod.UIAnchor.Center,
-            message: this._getAwardMessage(0),
+            message: BountyHunter._getAwardMessage(0),
             bgColor: UI.COLORS.BF_GREY_4,
             bgAlpha: 0.5,
             bgFill: mod.UIBgFill.Blur,
@@ -337,21 +340,27 @@ export class BountyHunter {
 
     private static _getBigBountyRowUIParams(y: number): UIContainer.ChildParams<UIContainer.Params> {
         const childrenParams = [
-            this._getBigBountyTextUIParams(
+            BountyHunter._getBigBountyTextUIParams(
                 3,
                 90,
                 mod.UIAnchor.CenterLeft,
                 mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.points, 0),
                 UI.COLORS.BF_GREEN_BRIGHT
             ),
-            this._getBigBountyTextUIParams(
+            BountyHunter._getBigBountyTextUIParams(
                 88,
                 60,
                 mod.UIAnchor.CenterLeft,
-                this._UNKNOWN_HEADING_MESSAGE,
+                BountyHunter._UNKNOWN_HEADING_MESSAGE,
                 UI.COLORS.WHITE
             ),
-            this._getBigBountyTextUIParams(3, 200, mod.UIAnchor.CenterRight, mod.Message(0), UI.COLORS.BF_RED_BRIGHT),
+            BountyHunter._getBigBountyTextUIParams(
+                3,
+                200,
+                mod.UIAnchor.CenterRight,
+                mod.Message(0),
+                UI.COLORS.BF_RED_BRIGHT
+            ),
         ];
 
         return {
@@ -369,15 +378,15 @@ export class BountyHunter {
     }
 
     private static _getBigBountyUIParams(player: mod.Player): UIContainer.Params {
-        const childrenParams = Array.from({ length: this._MAX_BIG_BOUNTIES }, (_, index) =>
-            this._getBigBountyRowUIParams(index * (20 + 4))
+        const childrenParams = Array.from({ length: BountyHunter._MAX_BIG_BOUNTIES }, (_, index) =>
+            BountyHunter._getBigBountyRowUIParams(index * (20 + 4))
         );
 
         return {
             x: 32,
             y: 340,
             width: 296,
-            height: this._MAX_BIG_BOUNTIES * 24,
+            height: BountyHunter._MAX_BIG_BOUNTIES * 24,
             anchor: mod.UIAnchor.BottomLeft,
             depth: mod.UIDepth.AboveGameUI,
             childrenParams: childrenParams,
@@ -391,7 +400,7 @@ export class BountyHunter {
             {
                 anchor: mod.UIAnchor.TopCenter,
                 width: 3840,
-                height: this._SPOTTED_OUTLINE_THICKNESS,
+                height: BountyHunter._SPOTTED_OUTLINE_THICKNESS,
                 bgColor: UI.COLORS.BF_RED_BRIGHT,
                 bgAlpha: 0.8,
                 bgFill: mod.UIBgFill.GradientTop,
@@ -402,7 +411,7 @@ export class BountyHunter {
             {
                 anchor: mod.UIAnchor.BottomCenter,
                 width: 3840,
-                height: this._SPOTTED_OUTLINE_THICKNESS,
+                height: BountyHunter._SPOTTED_OUTLINE_THICKNESS,
                 bgColor: UI.COLORS.BF_RED_BRIGHT,
                 bgAlpha: 0.8,
                 bgFill: mod.UIBgFill.GradientBottom,
@@ -412,7 +421,7 @@ export class BountyHunter {
             },
             {
                 anchor: mod.UIAnchor.CenterLeft,
-                width: this._SPOTTED_OUTLINE_THICKNESS,
+                width: BountyHunter._SPOTTED_OUTLINE_THICKNESS,
                 height: 2160,
                 bgColor: UI.COLORS.BF_RED_BRIGHT,
                 bgAlpha: 0.8,
@@ -423,7 +432,7 @@ export class BountyHunter {
             },
             {
                 anchor: mod.UIAnchor.CenterRight,
-                width: this._SPOTTED_OUTLINE_THICKNESS,
+                width: BountyHunter._SPOTTED_OUTLINE_THICKNESS,
                 height: 2160,
                 bgColor: UI.COLORS.BF_RED_BRIGHT,
                 bgAlpha: 0.8,
@@ -445,9 +454,9 @@ export class BountyHunter {
     }
 
     private static _getDistanceMessage(bountyPosition: mod.Vector, position?: mod.Vector): mod.Message {
-        if (!position) return this._UNKNOWN_HEADING_MESSAGE;
+        if (!position) return BountyHunter._UNKNOWN_HEADING_MESSAGE;
 
-        const heading = this._getHeading(position, bountyPosition);
+        const heading = BountyHunter._getHeading(position, bountyPosition);
         const distance = ~~mod.DistanceBetween(position, bountyPosition);
 
         if (heading < 22.5) return mod.Message(mod.stringkeys.bountyHunter.hud.bigBounty.headingN, distance);
@@ -462,11 +471,39 @@ export class BountyHunter {
     }
 
     private static _awardScavenger(player: mod.Player): void {
-        mod.Resupply(player, mod.ResupplyTypes.AmmoCrate);
-
         if (!mod.GetSoldierState(player, mod.SoldierStateBool.IsAISoldier)) {
-            mod.DisplayHighlightedWorldLogMessage(this._SCAVENGER_LOG_MESSAGE, player);
+            mod.DisplayHighlightedWorldLogMessage(BountyHunter._SCAVENGER_LOG_MESSAGE, player);
         }
+
+        mod.SetInventoryMagazineAmmo(
+            player,
+            mod.InventorySlots.PrimaryWeapon,
+            mod.GetInventoryMagazineAmmo(player, mod.InventorySlots.PrimaryWeapon) + 30
+        );
+
+        mod.SetInventoryMagazineAmmo(
+            player,
+            mod.InventorySlots.SecondaryWeapon,
+            mod.GetInventoryMagazineAmmo(player, mod.InventorySlots.SecondaryWeapon) + 15
+        );
+
+        mod.SetInventoryMagazineAmmo(
+            player,
+            mod.InventorySlots.GadgetOne,
+            mod.GetInventoryMagazineAmmo(player, mod.InventorySlots.GadgetOne) + 1
+        );
+
+        mod.SetInventoryMagazineAmmo(
+            player,
+            mod.InventorySlots.GadgetTwo,
+            mod.GetInventoryMagazineAmmo(player, mod.InventorySlots.GadgetTwo) + 1
+        );
+
+        mod.SetInventoryMagazineAmmo(
+            player,
+            mod.InventorySlots.Throwable,
+            mod.GetInventoryMagazineAmmo(player, mod.InventorySlots.Throwable) + 1
+        );
     }
 
     // ---- Public Static Methods ---- //
@@ -482,12 +519,12 @@ export class BountyHunter {
         logLevel?: Logging.LogLevel,
         includeError?: boolean
     ): void {
-        this._logger.setLogging(log, logLevel, includeError);
+        BountyHunter._logger.setLogging(log, logLevel, includeError);
     }
 
     public static initialize(): void {
         mod.SetScoreboardType(mod.ScoreboardType.CustomFFA);
-        mod.SetGameModeTargetScore(this._TARGET_POINTS);
+        mod.SetGameModeTargetScore(BountyHunter._TARGET_POINTS);
         mod.SetScoreboardColumnWidths(160, 160, 160, 160, 160);
 
         mod.SetScoreboardColumnNames(
@@ -501,7 +538,7 @@ export class BountyHunter {
         // dynamicLogger?.logAsync(`Setting up scoreboard header.`);
         // const headerName = mod.Message(
         //     mod.stringkeys.bountyHunter.scoreboard.header,
-        //     this._TARGET_POINTS,
+        //     BountyHunter._TARGET_POINTS,
         //     mod.stringkeys.bountyHunter.scoreboard.none,
         // );
 
@@ -516,7 +553,7 @@ export class BountyHunter {
     public static get leader(): BountyHunter | undefined {
         let leader: BountyHunter | undefined;
 
-        for (const bountyHunter of this._ALL_BOUNTY_HUNTERS.values()) {
+        for (const bountyHunter of BountyHunter._ALL_BOUNTY_HUNTERS.values()) {
             if (leader && leader.points >= bountyHunter.points) continue;
 
             leader = bountyHunter;
@@ -526,28 +563,28 @@ export class BountyHunter {
     }
 
     public static getFromPlayer(player: mod.Player): BountyHunter | undefined {
-        return this.getFromPlayerId(mod.GetObjId(player));
+        return BountyHunter.getFromPlayerId(mod.GetObjId(player));
     }
 
     public static getFromPlayerId(playerId: number): BountyHunter | undefined {
-        return this._ALL_BOUNTY_HUNTERS.get(playerId);
+        return BountyHunter._ALL_BOUNTY_HUNTERS.get(playerId);
     }
 
     public static handleKill(killerPlayer: mod.Player, victimPlayer?: mod.Player): void {
-        const killer = killerPlayer && this.getFromPlayer(killerPlayer);
-        const victim = victimPlayer && this.getFromPlayer(victimPlayer);
+        const killer = killerPlayer && BountyHunter.getFromPlayer(killerPlayer);
+        const victim = victimPlayer && BountyHunter.getFromPlayer(victimPlayer);
         const victimIsValid = victim !== undefined && !victim._deleteIfNotValid();
         const killerIsValid = killer !== undefined && !killer._deleteIfNotValid();
 
         if (victimIsValid) {
-            new ScavengerDrop(victimPlayer!, (player: mod.Player) => this._awardScavenger(player));
+            new ScavengerDrop(victimPlayer!, BountyHunter._awardScavenger);
         }
 
         const victimKillStreak = victim?._killStreak ?? 0; // This needs to be captured before the victim's kill streak is reset.
-        const bounty = this._getBounty(victimKillStreak);
+        const bounty = BountyHunter._getBounty(victimKillStreak);
 
-        if (victim && bounty >= this._BIG_BOUNTY_THRESHOLD) {
-            this._clearBigBounty(victim, bounty, killer);
+        if (victim && bounty >= BountyHunter._BIG_BOUNTY_THRESHOLD) {
+            BountyHunter._clearBigBounty(victim, bounty, killer);
         }
 
         if (victimIsValid) {
@@ -556,6 +593,7 @@ export class BountyHunter {
             victim._setKillStreak(0);
             victim._bigBountiesUI?.hide();
             victim._stopFlagging();
+            victim._hideSpottedOutline();
 
             mod.SetScoreboardPlayerValues(
                 victimPlayer!,
@@ -563,14 +601,14 @@ export class BountyHunter {
                 victim._kills,
                 victim._assists,
                 victim._deaths,
-                this._getBounty(0)
+                BountyHunter._getBounty(0)
             );
         }
 
-        if (this._logger.willLog(this.LogLevel.Info)) {
-            this._logger.log(
+        if (BountyHunter._logger.willLog(BountyHunter.LogLevel.Info)) {
+            BountyHunter._logger.log(
                 `P_${killer ? killer._playerId : 'U'} killed P_${victim ? victim._playerId : 'U'} and got ${bounty} PTS.`,
-                this.LogLevel.Info
+                BountyHunter.LogLevel.Info
             );
         }
 
@@ -597,24 +635,22 @@ export class BountyHunter {
             killer._kills,
             killer._assists,
             killer._deaths,
-            this._getBounty(killer._killStreak)
+            BountyHunter._getBounty(killer._killStreak)
         );
 
-        const spottingDelay = this._getSpottingDelay(killer._killStreak);
+        const spottingDelay = BountyHunter._getSpottingDelay(killer._killStreak);
 
         if (spottingDelay) {
             Timers.clearInterval(killer._spottingIntervalId);
 
-            const spottingDuration = this._getSpottingDuration(killer._killStreak);
+            const spottingDuration = BountyHunter._getSpottingDuration(killer._killStreak);
 
-            killer._spottingIntervalId = Timers.setInterval(
-                () => killer._spot(spottingDuration),
-                spottingDuration + spottingDelay,
-                true
-            );
+            const spotKiller = () => killer._spot(spottingDuration);
+
+            killer._spottingIntervalId = Timers.setInterval(spotKiller, spottingDuration + spottingDelay, true);
         }
 
-        const flaggingDelay = this._getFlaggingDelay(killer._killStreak);
+        const flaggingDelay = BountyHunter._getFlaggingDelay(killer._killStreak);
 
         if (flaggingDelay) {
             Timers.clearInterval(killer._flaggingIntervalId);
@@ -622,25 +658,27 @@ export class BountyHunter {
             const bounty = BountyHunter._getBounty(killer._killStreak);
             const flag = killer._getFlag(bounty);
 
-            killer._flaggingIntervalId = Timers.setInterval(() => killer._flag(bounty, flag), flaggingDelay, true);
+            const flagKiller = () => killer._flag(bounty, flag);
+
+            killer._flaggingIntervalId = Timers.setInterval(flagKiller, flaggingDelay, true);
         }
     }
 
     public static handleAssist(assisterPlayer: mod.Player, victimPlayer?: mod.Player): void {
-        const assister = assisterPlayer && this.getFromPlayer(assisterPlayer);
-        const victim = victimPlayer && this.getFromPlayer(victimPlayer);
+        const assister = assisterPlayer && BountyHunter.getFromPlayer(assisterPlayer);
+        const victim = victimPlayer && BountyHunter.getFromPlayer(victimPlayer);
         const assisterIsValid = assister !== undefined && !assister._deleteIfNotValid();
 
         // Need to handle the race condition where `handleAssist` and `handleKill` for the same victim can be called in any order.
         const killStreakBeforeDeath = victim?._killStreakBeforeDeath ?? 0;
         const killStreak = victim?._killStreak ?? 0;
 
-        const bounty = ~~(this._getBounty(killStreak || killStreakBeforeDeath) / 2);
+        const bounty = ~~(BountyHunter._getBounty(killStreak || killStreakBeforeDeath) / 2);
 
-        if (this._logger.willLog(this.LogLevel.Info)) {
-            this._logger.log(
+        if (BountyHunter._logger.willLog(BountyHunter.LogLevel.Info)) {
+            BountyHunter._logger.log(
                 `P_${assister ? assister._playerId : 'U'} co-killed P_${victim ? victim._playerId : 'U'} and got ${bounty} PTS.`,
-                this.LogLevel.Info
+                BountyHunter.LogLevel.Info
             );
         }
 
@@ -671,7 +709,7 @@ export class BountyHunter {
     }
 
     public static handleDeployed(player: mod.Player): void {
-        const bountyHunter = this.getFromPlayer(player);
+        const bountyHunter = BountyHunter.getFromPlayer(player);
 
         if (!bountyHunter) return;
 
@@ -721,6 +759,8 @@ export class BountyHunter {
     private _isAI: boolean = false;
 
     private _spottingIntervalId?: number;
+
+    private _spottedOutlineHideTimeoutId?: number;
 
     private _flaggingIntervalId?: number;
 
@@ -774,6 +814,20 @@ export class BountyHunter {
 
     // ---- Private Methods ---- //
 
+    private _showSpottedOutline(): void {
+        Timers.clearTimeout(this._spottedOutlineHideTimeoutId);
+        this._spottedOutlineHideTimeoutId = undefined;
+        this._spottedOutlineUIs?.forEach((ui) => ui.show());
+    }
+
+    private _hideSpottedOutline(): void {
+        if (!this._spottedOutlineHideTimeoutId) return;
+
+        Timers.clearTimeout(this._spottedOutlineHideTimeoutId);
+        this._spottedOutlineHideTimeoutId = undefined;
+        this._spottedOutlineUIs?.forEach((ui) => ui.hide());
+    }
+
     private _spot(duration: number): void {
         if (this._deleteIfNotValid()) return;
 
@@ -788,9 +842,11 @@ export class BountyHunter {
 
         if (this._isAI) return;
 
-        this._spottedOutlineUIs?.forEach((ui) => ui.show());
+        this._showSpottedOutline();
 
-        Timers.setTimeout(() => this._spottedOutlineUIs?.forEach((ui) => ui.hide()), duration);
+        const hideSpottedOutline = () => this._hideSpottedOutline();
+
+        this._spottedOutlineHideTimeoutId = Timers.setTimeout(hideSpottedOutline, duration);
     }
 
     private _getFlag(bounty: number): mod.WorldIcon {
@@ -844,9 +900,15 @@ export class BountyHunter {
             Sounds.play2D(sound.sfxAsset, { duration: 5_000, target: this._player, amplitude: sound.amplitude });
         }
 
-        this._awardUI?.setMessage(BountyHunter._getAwardMessage(bounty)).show();
+        if (!this._awardUI) return;
 
-        mod.Wait(BountyHunter._AWARD_DURATION).then(() => this._awardUI?.hide());
+        this._awardUI.setMessage(BountyHunter._getAwardMessage(bounty)).show();
+
+        const hideAwardUI = () => {
+            this._awardUI?.hide();
+        };
+
+        Timers.setTimeout(hideAwardUI, BountyHunter._AWARD_DURATION);
     }
 
     private _setKillStreak(killStreak: number): void {
@@ -909,10 +971,12 @@ export class BountyHunter {
 
         this._stopFlagging();
         Timers.clearInterval(this._spottingIntervalId);
+        Timers.clearTimeout(this._spottedOutlineHideTimeoutId);
         this._killStreak = 0;
         this._selfInfoContainer?.delete();
         this._awardUI?.delete();
         this._bigBountiesUI?.delete();
+        this._spottedOutlineUIs?.forEach((ui) => ui.delete());
 
         BountyHunter._updateBigBounties(this, 0, BountyHunter._ZERO_VECTOR); // TODO: Perhaps position should be undefined.
 
