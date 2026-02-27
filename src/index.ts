@@ -10,42 +10,17 @@ import { Timers } from 'bf6-portal-utils/timers/index.ts';
 
 import { DebugTool } from './debug-tool/index.ts';
 import { BountyHunter } from './bounty-hunter/index.ts';
-import { createVehicleSpawner } from './utils/vehicle-spawner.ts';
+import { createVehicleSpawner, spawnVehicleSpawners } from './vehicles.ts';
 
 import { getPlayerStateVectorString } from './helpers/index.ts';
 
 import { getSpawnDataAndInitializeOptions } from './spawns.ts';
 
-const DEBUGGING = true;
+const DEBUGGING = false;
 
 let adminDebugTool: DebugTool | undefined;
 let telemetryInterval: number | undefined;
 let spawnType: 'spawnPoints' | 'dropIns' | 'default' | undefined;
-
-const EASTWOOD_VEHICLE_SPAWNS: { position: mod.Vector; orientation: number; spawner?: mod.VehicleSpawner }[] = [
-    { position: mod.CreateVector(-120.1, 233.56, 119.31), orientation: 165 },
-    { position: mod.CreateVector(-140.71, 233.92, 201.34), orientation: 165 },
-    { position: mod.CreateVector(-143.84, 232.07, -52.17), orientation: 195 },
-    { position: mod.CreateVector(-217.75, 232.44, -71.8), orientation: 180 },
-    { position: mod.CreateVector(-227.42, 231.72, 98.61), orientation: 195 },
-    { position: mod.CreateVector(-29.41, 224.58, 307.04), orientation: 10 },
-    { position: mod.CreateVector(-234.72, 232.0, 2.4), orientation: 345 },
-    { position: mod.CreateVector(-257.67, 230.56, 40.01), orientation: 15 },
-    { position: mod.CreateVector(-290.52, 231.01, 64.09), orientation: 120 },
-    { position: mod.CreateVector(-312.76, 230.72, -75.22), orientation: 240 },
-    { position: mod.CreateVector(-34.92, 237.75, 99.43), orientation: 15 },
-    { position: mod.CreateVector(-82.81, 231.48, -6.97), orientation: 0 },
-    { position: mod.CreateVector(115.6, 232.77, -33.15), orientation: 45 },
-    { position: mod.CreateVector(128.51, 224.15, 97.84), orientation: 345 },
-    { position: mod.CreateVector(137.39, 232.04, -2.6), orientation: 68 },
-    { position: mod.CreateVector(166.25, 240.04, -196.81), orientation: 180 },
-    { position: mod.CreateVector(232.85, 229.41, 39.2), orientation: 345 },
-    { position: mod.CreateVector(312.06, 232.39, -17.16), orientation: 195 },
-    { position: mod.CreateVector(34.61, 234.35, -12.16), orientation: 45 },
-    { position: mod.CreateVector(62.12, 233.11, -56.33), orientation: 0 },
-    { position: mod.CreateVector(70.73, 227.54, 113.09), orientation: 0 },
-    { position: mod.CreateVector(75.96, 229.28, 73.16), orientation: 255 },
-];
 
 function createAdminDebugTool(player: mod.Player): void {
     if (!DEBUGGING) return;
@@ -190,17 +165,9 @@ function handleGameModeSetup(): void {
         return;
     }
 
-    if (MapDetector.currentMap() !== MapDetector.Map.Eastwood) return;
+    const adminLogger = (text: string) => adminDebugTool?.dynamicLog(text);
 
-    EASTWOOD_VEHICLE_SPAWNS.forEach((spawn) => {
-        createVehicleSpawner(spawn.position, spawn.orientation, mod.VehicleList.GolfCart, true, 10)
-            .then((spawner) => {
-                spawn.spawner = spawner;
-            })
-            .catch((error) => {
-                adminDebugTool?.dynamicLog(`<SCRIPT> Error creating vehicle spawner: ${error?.toString()}`);
-            });
-    });
+    spawnVehicleSpawners(adminLogger);
 }
 
 function handleTimeLimitReached(): void {

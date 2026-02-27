@@ -553,6 +553,16 @@ const REDLINE_STORAGE_DROP_INS: FFADropIns.SpawnData = {
     y: 400,
 };
 
+const CONTAMINATED_DROP_INS: FFADropIns.SpawnData = {
+    spawnRectangles: [
+        { minX: -203, minZ: -334, maxX: -81, maxZ: -170 },
+        { minX: -156, minZ: -156, maxX: 35, maxZ: 184 },
+        { minX: 35, minZ: -71, maxX: 190, maxZ: 264 },
+        { minX: 190, minZ: 82, maxX: 418, maxZ: 236 },
+    ],
+    y: 500,
+};
+
 function buildInitializeOptions(options: FFASpawnPoints.InitializeOptions): FFASpawnPoints.InitializeOptions {
     return Object.assign({ initialPromptDelay: 3, promptDelay: 10 }, options);
 }
@@ -668,6 +678,13 @@ export function getSpawnDataAndInitializeOptions(): SpawnDataAndInitializeOption
         return {
             spawnOptions: buildInitializeOptions({}),
             dropInData: REDLINE_STORAGE_DROP_INS,
+        };
+    }
+
+    if (map == MapDetector.Map.Contaminated) {
+        return {
+            spawnOptions: buildInitializeOptions({}),
+            dropInData: CONTAMINATED_DROP_INS,
         };
     }
 
